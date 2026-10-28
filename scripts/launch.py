@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -258,6 +259,8 @@ def advance(client: CodeOcean, record: dict[str, Any], out: Path, capture: str |
         if comp.state not in (ComputationState.Completed, ComputationState.Failed):
             return
         record["exit_code"] = comp.exit_code
+        # A relaunch reuses the folder: clear it, so no earlier run's files remain.
+        shutil.rmtree(out / label, ignore_errors=True)
         run = download_results(client, comp.id, out / label) if comp.has_results else {}
         record["run_status"] = run.get("status")
         ok = (
