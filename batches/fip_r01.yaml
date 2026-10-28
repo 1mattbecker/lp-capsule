@@ -1,0 +1,202 @@
+# 49 curated FIP sessions, one 30 s window each, centred on
+# the middle trial's go cue; 15 mice, 6 rigs.
+# Made by lp-relabel scripts/plan_fip_batch.py; per-session table beside it.
+task: predict
+model: ephys_BottomCamera_Pylon2Test2
+videos:
+- asset: behavior_800886_2025-08-18_13-14-52
+  camera: BottomCamera
+  windows:
+  - [1475805, 1490926]
+- asset: behavior_800886_2025-09-11_13-52-51
+  camera: BottomCamera
+  windows:
+  - [1460783, 1475904]
+- asset: behavior_808054_2025-09-02_10-38-37
+  camera: BottomCamera
+  windows:
+  - [1438655, 1453776]
+- asset: behavior_808054_2025-09-25_11-08-40
+  camera: BottomCamera
+  windows:
+  - [1255684, 1270805]
+- asset: behavior_808054_2025-09-26_11-02-53
+  camera: BottomCamera
+  windows:
+  - [1324943, 1340064]
+- asset: behavior_808057_2025-08-22_12-40-22
+  camera: BottomCamera
+  windows:
+  - [1607626, 1622747]
+- asset: behavior_808057_2025-10-02_13-16-47
+  camera: BottomCamera
+  windows:
+  - [1426514, 1441514]
+- asset: behavior_809487_2025-09-19_13-56-52
+  camera: BottomCamera
+  windows:
+  - [1434966, 1449966]
+- asset: behavior_809487_2025-10-15_14-22-59
+  camera: BottomCamera
+  windows:
+  - [1361527, 1376527]
+- asset: behavior_809491_2025-09-29_09-35-32
+  camera: BottomCamera
+  windows:
+  - [1634682, 1649803]
+- asset: behavior_809491_2025-10-31_09-25-40
+  camera: BottomCamera
+  windows:
+  - [1427278, 1442399]
+- asset: behavior_813929_2025-11-12_13-42-24
+  camera: BottomCamera
+  windows:
+  - [1408060, 1423181]
+- asset: behavior_813929_2025-10-20_13-15-08
+  camera: BottomCamera
+  windows:
+  - [1631378, 1646499]
+- asset: behavior_813929_2025-11-11_13-35-45
+  camera: BottomCamera
+  windows:
+  - [1444549, 1459670]
+- asset: behavior_815334_2025-11-12_10-26-10
+  camera: BottomCamera
+  windows:
+  - [1401991, 1417112]
+- asset: behavior_815334_2025-11-17_10-00-04
+  camera: BottomCamera
+  windows:
+  - [1414260, 1429381]
+- asset: behavior_815334_2025-10-06_10-38-40
+  camera: BottomCamera
+  windows:
+  - [1638875, 1653875]
+- asset: behavior_815334_2025-10-31_13-31-18
+  camera: BottomCamera
+  windows:
+  - [1463923, 1479044]
+- asset: behavior_816212_2025-11-17_13-49-54
+  camera: BottomCamera
+  windows:
+  - [1266677, 1281798]
+- asset: behavior_816212_2025-12-11_13-24-29
+  camera: BottomCamera
+  windows:
+  - [1288414, 1303535]
+- asset: behavior_816214_2025-12-01_09-08-08
+  camera: BottomCamera
+  windows:
+  - [1328215, 1343336]
+- asset: behavior_816214_2025-12-05_09-03-03
+  camera: BottomCamera
+  windows:
+  - [1327648, 1342769]
+- asset: behavior_816883_2025-12-23_12-47-14
+  camera: BottomCamera
+  windows:
+  - [1379594, 1394715]
+- asset: behavior_816883_2025-12-24_12-31-44
+  camera: BottomCamera
+  windows:
+  - [1484150, 1499150]
+- asset: behavior_816883_2026-01-05_14-06-18
+  camera: BottomCamera
+  windows:
+  - [1443418, 1458539]
+- asset: behavior_816883_2026-01-09_13-51-45
+  camera: BottomCamera
+  windows:
+  - [1315988, 1330988]
+- asset: behavior_816883_2025-11-18_13-15-06
+  camera: BottomCamera
+  windows:
+  - [1577792, 1592792]
+- asset: behavior_816883_2025-12-11_13-16-47
+  camera: BottomCamera
+  windows:
+  - [1386228, 1401349]
+- asset: behavior_818580_2025-12-01_12-52-15
+  camera: BottomCamera
+  windows:
+  - [1447509, 1462630]
+- asset: behavior_818580_2025-12-09_12-38-00
+  camera: BottomCamera
+  windows:
+  - [1428795, 1443916]
+- asset: behavior_818580_2025-11-17_10-12-00
+  camera: BottomCamera
+  windows:
+  - [1013694, 1028815]
+- asset: behavior_818580_2025-11-26_10-55-34
+  camera: BottomCamera
+  windows:
+  - [1326731, 1341731]
+- asset: behavior_818580_2025-11-07_08-40-19
+  camera: BottomCamera
+  windows:
+  - [1680998, 1696119]
+- asset: behavior_818580_2025-11-13_09-55-28
+  camera: BottomCamera
+  windows:
+  - [1473158, 1488158]
+- asset: behavior_818585_2025-12-05_09-45-45
+  camera: BottomCamera
+  windows:
+  - [1453262, 1468262]
+- asset: behavior_818585_2025-12-16_09-49-11
+  camera: BottomCamera
+  windows:
+  - [1148945, 1163945]
+- asset: behavior_818585_2025-12-22_13-10-50
+  camera: BottomCamera
+  windows:
+  - [1268423, 1283544]
+- asset: behavior_818585_2026-01-05_14-39-35
+  camera: BottomCamera
+  windows:
+  - [1469036, 1484157]
+- asset: behavior_818585_2026-02-06_13-05-29
+  camera: BottomCamera
+  windows:
+  - [1417309, 1432309]
+- asset: behavior_818586_2026-01-05_10-09-01
+  camera: BottomCamera
+  windows:
+  - [1465609, 1480609]
+- asset: behavior_818586_2026-02-04_09-06-30
+  camera: BottomCamera
+  windows:
+  - [1413497, 1428618]
+- asset: behavior_818586_2025-12-22_11-02-52
+  camera: BottomCamera
+  windows:
+  - [1086062, 1101062]
+- asset: behavior_818586_2026-01-02_11-11-54
+  camera: BottomCamera
+  windows:
+  - [1329395, 1344516]
+- asset: behavior_820688_2025-12-05_09-43-38
+  camera: BottomCamera
+  windows:
+  - [1396145, 1411145]
+- asset: behavior_820688_2025-12-24_12-28-55
+  camera: BottomCamera
+  windows:
+  - [1466804, 1481925]
+- asset: behavior_820688_2026-01-06_13-24-58
+  camera: BottomCamera
+  windows:
+  - [1328971, 1343852]
+- asset: behavior_820688_2026-02-06_13-07-54
+  camera: BottomCamera
+  windows:
+  - [1228317, 1243317]
+- asset: behavior_820691_2026-01-05_09-00-15
+  camera: BottomCamera
+  windows:
+  - [1500073, 1515073]
+- asset: behavior_820691_2026-02-06_08-28-25
+  camera: BottomCamera
+  windows:
+  - [1442381, 1457502]
