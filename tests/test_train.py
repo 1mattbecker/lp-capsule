@@ -99,3 +99,9 @@ def test_project_assets_merged_with_label_check(project, pylon2_bundle, tmp_path
     (new / "labeled-data/sess/img00000007.jpg").unlink()
     with pytest.raises(FileNotFoundError, match="1 of 2 labeled images missing"):
         build_cfg(config, data, tmp_path / "again")
+
+
+def test_pixel_error_summary_pooled(tmp_path):
+    write(tmp_path / "predictions_pixel_error.csv", ",a,set\nimg0,1.0,train\nimg1,3.0,validation\n")
+    summary = pixel_error_summary(tmp_path, by_set=False)
+    assert summary.set.unique().tolist() == ["all"] and summary["mean"].iloc[0] == 2.0

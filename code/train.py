@@ -194,8 +194,10 @@ def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dic
     return cfg, info
 
 
-def pixel_error_summary(model_dir: Path) -> pd.DataFrame | None:
+def pixel_error_summary(model_dir: Path, by_set: bool = True) -> pd.DataFrame | None:
     """Return mean and median pixel error per keypoint and set, if LP wrote them.
+
+    With ``by_set`` False every frame is in one set, "all".
 
     Units are pixels of the original labeled frames: LP maps predictions back
     from the resized frame before comparing them with the labels.
@@ -204,7 +206,9 @@ def pixel_error_summary(model_dir: Path) -> pd.DataFrame | None:
     if not path.is_file():
         return None
     errors = pd.read_csv(path, index_col=0)
-    by = errors.pop("set") if "set" in errors else pd.Series("all", index=errors.index)
+    by = errors.pop("set") if "set" in errors else None
+    if by is None or not by_set:
+        by = pd.Series("all", index=errors.index)
     long = errors.assign(set=by).melt(id_vars="set", var_name="keypoint", value_name="px")
     summary = long.groupby(["set", "keypoint"], sort=False)["px"].agg(["mean", "median", "count"])
     return summary.reset_index()

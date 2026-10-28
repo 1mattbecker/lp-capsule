@@ -12,3 +12,6 @@ overrides:
   training:
     max_epochs: 100
     min_epochs: 100
+    lr_scheduler_params:
+      multisteplr:
+        milestones: [50, 67, 83]   # the original 150/200/250 of 300, scaled to 100

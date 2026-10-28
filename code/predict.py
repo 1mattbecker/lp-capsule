@@ -339,7 +339,8 @@ def check_labeled_frames(
     out_dir.mkdir(parents=True, exist_ok=True)
     for csv in lp_out.glob("predictions*.csv"):
         shutil.copy(csv, out_dir / csv.name)
-    summary = pixel_error_summary(lp_out)
+    # LP still splits other labels into train/val; that split means nothing here.
+    summary = pixel_error_summary(lp_out, by_set=not isinstance(labels_spec, str))
     if summary is not None:
         summary.to_csv(out_dir / "pixel_error_summary.csv", index=False)
     return {
