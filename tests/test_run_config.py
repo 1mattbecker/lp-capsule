@@ -96,3 +96,20 @@ def test_labeled_frames_without_videos():
     assert parse_config(load_config_text(dump(config))) == config
     with pytest.raises(ValueError, match="labeled_frames"):
         parse_config({"task": "predict", "model": "m"})
+
+
+def test_project_list_and_labels_csv():
+    train = parse_config(
+        {"task": "train", "project": ["new", "old"], "base_config": "old", "csv_file": "C.csv"}
+    )
+    assert train.project == ("new", "old") and assets_of(train) == ["new", "old"]
+    assert parse_config(load_config_text(dump(train))) == train
+    single = parse_config({"task": "train", "project": "p", "base_config": "m"})
+    assert single.project == ("p",) and "project: p\n" in dump(single)
+    predict = parse_config(
+        {"task": "predict", "model": "m", "labeled_frames": "labels/CollectedData.holdout.csv"}
+    )
+    assert assets_of(predict) == ["m", "labels"]
+    assert parse_config(load_config_text(dump(predict))) == predict
+    with pytest.raises(ValueError, match="labeled_frames"):
+        parse_config({"task": "predict", "model": "m", "labeled_frames": "just.csv"})

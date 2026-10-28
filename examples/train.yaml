@@ -1,8 +1,11 @@
-# Fine-tune Pylon2Test2 on a merged LP project (lp-relabel merge), for
-# scripts/launch.py train --name <new model asset>.
+# Fine-tune Pylon2Test2 on round-1 labels, for
+#   uv run scripts/launch.py train examples/train.yaml --name pylon2test2_r01
+# The old labeled-data/ and videos/ come from the model asset, the new frames
+# and the train CSV from the labels asset; the worker merges them into one data_dir.
 task: train
-project: pylon2test2_r01                      # CollectedData.csv, labeled-data/, videos/
-base_config: ephys_BottomCamera_Pylon2Test2   # its training.config.yaml
+project: [pylon2test2_r01_labels, ephys_BottomCamera_Pylon2Test2]
+csv_file: CollectedData.train.csv             # 1378 old + 134 new frames
+base_config: ephys_BottomCamera_Pylon2Test2   # its training.config.yaml, unchanged
 init_checkpoint: ephys_BottomCamera_Pylon2Test2
 overrides:
   training:

@@ -1,0 +1,6 @@
+# Score a model on the 30 held-out round-1 frames; run once per model, e.g.
+#   uv run scripts/launch.py predict examples/holdout_eval.yaml --out runs/holdout_old
+# then again with model: pylon2test2_r01.
+task: predict
+model: ephys_BottomCamera_Pylon2Test2
+labeled_frames: pylon2test2_r01_labels/CollectedData.holdout.csv

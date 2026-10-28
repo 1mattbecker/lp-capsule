@@ -140,19 +140,24 @@ def resolve_config(
             print(f"  asset {ref} -> {cache[ref].name} ({cache[ref].id})", flush=True)
         return cache[ref]
 
+    def in_asset(path: str) -> str:
+        """Return ``<asset>/<rest>`` with the asset id or name replaced by its name."""
+        first = base_config_asset(path)
+        return asset(first).name + path[len(first) :]
+
     if isinstance(config, PredictConfig):
+        labeled = config.labeled_frames
         resolved: RunConfig = replace(
             config,
             model=asset(config.model).name,
             videos=tuple(replace(v, asset=asset(v.asset).name) for v in config.videos),
+            labeled_frames=in_asset(labeled) if isinstance(labeled, str) else labeled,
         )
     else:
-        base = config.base_config
-        rest = base[len(base_config_asset(base)) :]
         resolved = replace(
             config,
-            project=asset(config.project).name,
-            base_config=asset(base_config_asset(base)).name + rest,
+            project=tuple(asset(p).name for p in config.project),
+            base_config=in_asset(config.base_config),
             init_checkpoint=(
                 asset(config.init_checkpoint).name if config.init_checkpoint else None
             ),

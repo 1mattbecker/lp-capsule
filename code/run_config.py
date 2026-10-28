@@ -17,12 +17,14 @@ Predict::
       - asset: behavior_782394_2025-04-23_10-51-14
         camera: BottomCamera          # or path: behavior-videos/BottomCamera/video.mp4
         windows: [[120000, 120500]]   # [start, end) source frames; omit = whole video
-    labeled_frames: false # true: also score the model on its own labeled frames
+    labeled_frames: false # true: also score the model on its own labeled frames;
+                          # or <asset>/<labels.csv> to score it on those frames
 
 Train::
 
     task: train
     project: pylon2test2_r01          # CollectedData.csv, labeled-data/, videos/
+                                      # or a list of assets, merged into one data_dir
     base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>.yaml
     init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune from it
     overrides: {training: {max_epochs: 100, min_epochs: 100}}
@@ -72,9 +74,10 @@ class PredictConfig:
     batch_size: int = 0
     # Write diagnostics.json about the first window (see predict.diagnose).
     debug: bool = False
-    # Also predict the model's own labeled frames and report pixel error per
-    # keypoint and train/val/test split (see predict.check_labeled_frames).
-    labeled_frames: bool = False
+    # Also predict labeled frames and report pixel error per keypoint: True for the
+    # model's own training labels (with their train/val/test split), or
+    # "<asset>/<labels.csv>" for other labels (see predict.check_labeled_frames).
+    labeled_frames: bool | str = False
     task: str = "predict"
 
 
@@ -82,7 +85,9 @@ class PredictConfig:
 class TrainConfig:
     """A train run: an LP project, a starting config, optionally a checkpoint."""
 
-    project: str
+    # One asset, or several whose labeled-data/ and videos/ are merged into one
+    # data_dir; csv_file is read from the first that has it.
+    project: tuple[str, ...]
     base_config: str
     init_checkpoint: str | None = None
     csv_file: str = "CollectedData.csv"
@@ -91,6 +96,10 @@ class TrainConfig:
     # Predict the project's videos/ after training (slow on long videos).
     predict_videos: bool = False
     task: str = "train"
+
+    def __post_init__(self) -> None:
+        if isinstance(self.project, str):
+            object.__setattr__(self, "project", (self.project,))
 
 
 RunConfig = PredictConfig | TrainConfig
@@ -182,7 +191,15 @@ def parse_predict(raw: dict[str, Any]) -> PredictConfig:
         {"task", "model", "videos", "reader", "precision", "batch_size", "debug", "labeled_frames"},
         "predict",
     )
-    labeled_frames = _flag(raw.get("labeled_frames", False), "labeled_frames")
+    labeled_frames = raw.get("labeled_frames", False)
+    if isinstance(labeled_frames, str):
+        parts = PurePosixPath(labeled_frames).parts
+        if labeled_frames.startswith("/") or len(parts) < 2 or ".." in parts:
+            raise ValueError(
+                f"labeled_frames must be true or <asset>/<labels.csv>, got {labeled_frames!r}"
+            )
+    else:
+        labeled_frames = _flag(labeled_frames, "labeled_frames")
     videos = raw.get("videos", [] if labeled_frames else None)
     if not isinstance(videos, list) or not (videos or labeled_frames):
         raise ValueError("predict: videos must be a non-empty list (or set labeled_frames)")
@@ -235,8 +252,12 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
     predict_videos = raw.get("predict_videos", False)
     if not isinstance(predict_videos, bool):
         raise ValueError("predict_videos must be true or false")
+    project = raw.get("project")
+    projects = project if isinstance(project, list) else [project]
+    if not projects:
+        raise ValueError("project must be an asset name or a non-empty list of them")
     return TrainConfig(
-        project=_name(raw.get("project"), "project"),
+        project=tuple(_name(p, "project") for p in projects),
         base_config=base,
         init_checkpoint=None if init is None else _name(init, "init_checkpoint"),
         csv_file=csv_file,
@@ -264,8 +285,10 @@ def assets_of(config: RunConfig) -> list[str]:
     """Return the mount names a run needs, in order, each once."""
     if isinstance(config, PredictConfig):
         names = [config.model, *(v.asset for v in config.videos)]
+        if isinstance(config.labeled_frames, str):
+            names.append(base_config_asset(config.labeled_frames))
     else:
-        names = [config.project, base_config_asset(config.base_config)]
+        names = [*config.project, base_config_asset(config.base_config)]
         if config.init_checkpoint:
             names.append(config.init_checkpoint)
     return list(dict.fromkeys(names))
@@ -281,7 +304,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
             "precision": config.precision,
             "batch_size": config.batch_size,
             **({"debug": True} if config.debug else {}),
-            **({"labeled_frames": True} if config.labeled_frames else {}),
+            **({"labeled_frames": config.labeled_frames} if config.labeled_frames else {}),
             "videos": [
                 {
                     "asset": v.asset,
@@ -294,7 +317,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
         }
     return {
         "task": "train",
-        "project": config.project,
+        "project": config.project[0] if len(config.project) == 1 else list(config.project),
         "base_config": config.base_config,
         "init_checkpoint": config.init_checkpoint,
         "csv_file": config.csv_file,

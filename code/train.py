@@ -16,6 +16,7 @@ as a temporary checkpoint whose every key LP's model has.
 
 from __future__ import annotations
 
+import csv
 import os
 from pathlib import Path
 from typing import Any
@@ -98,14 +99,54 @@ def init_checkpoint(cfg: Any, asset: Path, names: list[str], work: Path) -> dict
     }
 
 
+def assemble_project(data_dir: Path, projects: tuple[str, ...], csv_file: str, work: Path) -> Path:
+    """Return one LP data_dir for the project assets.
+
+    A single asset is used as mounted. Several are merged into ``work/project`` by
+    symlinks: every ``labeled-data/<folder>`` and ``videos/<file>`` of each, and
+    ``csv_file`` from the first asset that has it. A name in two assets is an error.
+    """
+    roots = [data_dir / p for p in projects]
+    if len(roots) == 1:
+        return roots[0]
+    merged = work / "project"
+    for sub in ("labeled-data", "videos"):
+        (merged / sub).mkdir(parents=True)
+        for root in roots:
+            for entry in sorted((root / sub).glob("*")) if (root / sub).is_dir() else []:
+                link = merged / sub / entry.name
+                if link.is_symlink():
+                    raise ValueError(f"{sub}/{entry.name} is in more than one project asset")
+                link.symlink_to(entry)
+    with_csv = [root for root in roots if (root / csv_file).is_file()]
+    if not with_csv:
+        raise FileNotFoundError(f"no project asset has {csv_file}: {list(projects)}")
+    (merged / csv_file).symlink_to(with_csv[0] / csv_file)
+    return merged
+
+
+def check_label_paths(project: Path, labels: Path) -> int:
+    """Return the number of labeled frames, failing if any image is missing."""
+    with labels.open(newline="") as f:
+        paths = [row[0] for i, row in enumerate(csv.reader(f)) if i >= 3 and row]
+    missing = [p for p in paths if not (project / p).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"{len(missing)} of {len(paths)} labeled images missing under {project}, "
+            f"e.g. {missing[:3]}"
+        )
+    return len(paths)
+
+
 def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dict[str, Any]]:
     """Return the LP training config and facts for the run record."""
     from omegaconf import OmegaConf, open_dict
 
-    project = data_dir / config.project
+    project = assemble_project(data_dir, config.project, config.csv_file, work)
     labels = project / config.csv_file
     if not labels.is_file():
         raise FileNotFoundError(f"no labels CSV {labels}")
+    n_labeled = check_label_paths(project, labels)
     names = csv_keypoint_names(labels)
     base, base_names = base_config_path(config, data_dir)
     if base_names is not None and base_names != names:
@@ -140,9 +181,9 @@ def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dic
             f"losses {losses} train on unlabeled video, but {videos} has no .mp4"
         )
     info: dict[str, Any] = {
-        "project": config.project,
+        "project": list(config.project),
         "labels": config.csv_file,
-        "n_labeled_frames": sum(1 for _ in labels.open()) - 3,
+        "n_labeled_frames": n_labeled,
         "keypoint_names": names,
         "base_config": str(base.relative_to(data_dir)),
     }

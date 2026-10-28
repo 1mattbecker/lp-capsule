@@ -16,6 +16,7 @@ def project(tmp_path):
     header = (FIXTURES / "pylon2test2.labels_header.csv").read_text()
     write(root / "CollectedData.csv", header + "labeled-data/a/img0.png" + ",1" * 22 + "\n")
     write(root / "videos/a.mp4", b"")
+    write(root / "labeled-data/a/img0.png", b"png")
     return root
 
 
@@ -66,3 +67,35 @@ def test_pixel_error_summary(tmp_path):
     assert summary.loc[("train", "a"), "mean"] == 2.0
     assert summary.loc[("test", "a"), "count"] == 1
     assert summary.loc[("test", "b"), "count"] == 0
+
+
+def test_project_assets_merged_with_label_check(project, pylon2_bundle, tmp_path):
+    """Old labels and videos in the model asset, new ones in a second asset."""
+    data = project.parent
+    shutil.move(pylon2_bundle, data / pylon2_bundle.name)
+    old = data / pylon2_bundle.name
+    write(old / "videos/clip.mp4", b"")
+    new = data / "r01_labels"
+    header = (FIXTURES / "pylon2test2.labels_header.csv").read_text()
+    write(
+        new / "CollectedData.train.csv",
+        header
+        + "labeled-data/a/img0.png" + ",1" * 22 + "\n"
+        + "labeled-data/sess/img00000007.jpg" + ",1" * 22 + "\n",
+    )  # fmt: skip
+    write(new / "labeled-data/sess/img00000007.jpg", b"jpg")
+    config = TrainConfig(
+        project=("r01_labels", old.name),
+        base_config=old.name,
+        csv_file="CollectedData.train.csv",
+    )
+    cfg, info = build_cfg(config, data, tmp_path)
+    merged = tmp_path / "project"
+    assert cfg.data.data_dir == str(merged)
+    assert (merged / "labeled-data/a").resolve() == (old / "labeled-data/a").resolve()
+    assert (merged / "labeled-data/sess").resolve() == (new / "labeled-data/sess").resolve()
+    assert (merged / "videos/clip.mp4").is_symlink()
+    assert info["n_labeled_frames"] == 2
+    (new / "labeled-data/sess/img00000007.jpg").unlink()
+    with pytest.raises(FileNotFoundError, match="1 of 2 labeled images missing"):
+        build_cfg(config, data, tmp_path / "again")
