@@ -90,8 +90,10 @@ ACTIVE_STATES = {
     ComputationState.Finalizing,
 }
 IN_FLIGHT = ("running", "capturing")
-# Result files downloaded for every run; predict runs add predictions/*.csv.
+# Result files downloaded for every run.
 SMALL_RESULTS = ("run.json", "run_config.yaml", "pixel_error_summary.csv", "diagnostics.json")
+# Folders whose CSVs are downloaded too.
+RESULT_FOLDERS = ("predictions", "labeled_frames")
 
 
 def make_client() -> CodeOcean:
@@ -206,11 +208,13 @@ def download_results(client: CodeOcean, comp_id: str, out_dir: Path) -> dict[str
         if name in top:
             url = computations.get_result_file_download_url(comp_id, top[name]).url
             fetch(url, out_dir / name)
-    if "predictions" in top:
-        for item in computations.list_computation_results(comp_id, top["predictions"]).items:
+    for folder in RESULT_FOLDERS:
+        if folder not in top:
+            continue
+        for item in computations.list_computation_results(comp_id, top[folder]).items:
             if item.name.endswith(".csv"):
                 url = computations.get_result_file_download_url(comp_id, item.path).url
-                fetch(url, out_dir / "predictions" / item.name)
+                fetch(url, out_dir / folder / item.name)
     run_json = out_dir / "run.json"
     return json.loads(run_json.read_text()) if run_json.is_file() else {}
 

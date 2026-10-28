@@ -291,6 +291,52 @@ def predict_video(
     return VideoResult(pd.concat(parts), info)
 
 
+def check_labeled_frames(model: Any, bundle: Bundle, out_dir: Path) -> dict[str, Any]:
+    """Predict the model's own labeled frames; write pixel errors to ``out_dir``.
+
+    The labels are the training CSV in the bundle (``data.csv_file``'s name), so
+    LP rebuilds the training run's train/val/test split from the config's seeds.
+    The semi-supervised losses are switched off for this, so LP builds a
+    labeled-only data module; the network is unchanged.
+    """
+    import shutil
+
+    from omegaconf import open_dict
+    from train import pixel_error_summary
+
+    cfg = model.cfg
+    labels = bundle.root / Path(str(cfg.data.get("csv_file") or "CollectedData.csv")).name
+    if not labels.is_file():
+        found = sorted(bundle.root.glob("CollectedData*.csv"))
+        if not found:
+            raise FileNotFoundError(f"no labels CSV in {bundle.root}")
+        labels = found[0]
+    losses = list(cfg.model.get("losses_to_use") or [])
+    with open_dict(cfg):
+        cfg.model.losses_to_use = []
+    try:
+        result = model.predict_on_label_csv(
+            labels, data_dir=bundle.root, compute_metrics=True, add_train_val_test_set=True
+        )
+    finally:
+        with open_dict(cfg):
+            cfg.model.losses_to_use = losses
+    lp_out = model.image_preds_dir() / labels.name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for csv in lp_out.glob("predictions*.csv"):
+        shutil.copy(csv, out_dir / csv.name)
+    summary = pixel_error_summary(lp_out)
+    if summary is not None:
+        summary.to_csv(out_dir / "pixel_error_summary.csv", index=False)
+    return {
+        "labels": labels.name,
+        "n_frames": len(result.predictions),
+        "pixel_error_px_original_frame": (
+            summary.to_dict(orient="records") if summary is not None else None
+        ),
+    }
+
+
 def run_predict(
     config: PredictConfig, data_dir: Path, results_dir: Path, work: Path, record: Any
 ) -> None:
@@ -328,3 +374,7 @@ def run_predict(
             }
         )
         record.update(videos=videos)
+    if config.labeled_frames:
+        record.update(
+            labeled_frames=check_labeled_frames(model, bundle, results_dir / "labeled_frames")
+        )

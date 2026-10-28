@@ -17,6 +17,7 @@ Predict::
       - asset: behavior_782394_2025-04-23_10-51-14
         camera: BottomCamera          # or path: behavior-videos/BottomCamera/video.mp4
         windows: [[120000, 120500]]   # [start, end) source frames; omit = whole video
+    labeled_frames: false # true: also score the model on its own labeled frames
 
 Train::
 
@@ -71,6 +72,9 @@ class PredictConfig:
     batch_size: int = 0
     # Write diagnostics.json about the first window (see predict.diagnose).
     debug: bool = False
+    # Also predict the model's own labeled frames and report pixel error per
+    # keypoint and train/val/test split (see predict.check_labeled_frames).
+    labeled_frames: bool = False
     task: str = "predict"
 
 
@@ -174,11 +178,14 @@ def parse_video(raw: Any, where: str) -> VideoSpec:
 def parse_predict(raw: dict[str, Any]) -> PredictConfig:
     """Parse a ``task: predict`` config."""
     _check_keys(
-        raw, {"task", "model", "videos", "reader", "precision", "batch_size", "debug"}, "predict"
+        raw,
+        {"task", "model", "videos", "reader", "precision", "batch_size", "debug", "labeled_frames"},
+        "predict",
     )
-    videos = raw.get("videos")
-    if not isinstance(videos, list) or not videos:
-        raise ValueError("predict: videos must be a non-empty list")
+    labeled_frames = _flag(raw.get("labeled_frames", False), "labeled_frames")
+    videos = raw.get("videos", [] if labeled_frames else None)
+    if not isinstance(videos, list) or not (videos or labeled_frames):
+        raise ValueError("predict: videos must be a non-empty list (or set labeled_frames)")
     specs = tuple(parse_video(v, f"videos[{i}]") for i, v in enumerate(videos))
     labels = [s.label for s in specs]
     repeated = sorted({x for x in labels if labels.count(x) > 1})
@@ -194,6 +201,7 @@ def parse_predict(raw: dict[str, Any]) -> PredictConfig:
         precision=_choice(raw.get("precision", "fp16"), PRECISIONS, "precision"),
         batch_size=batch_size,
         debug=_flag(raw.get("debug", False), "debug"),
+        labeled_frames=labeled_frames,
     )
 
 
@@ -273,6 +281,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
             "precision": config.precision,
             "batch_size": config.batch_size,
             **({"debug": True} if config.debug else {}),
+            **({"labeled_frames": True} if config.labeled_frames else {}),
             "videos": [
                 {
                     "asset": v.asset,

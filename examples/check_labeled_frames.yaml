@@ -1,0 +1,5 @@
+# Check that inference works: predict the model's own labeled frames and report
+# pixel error per keypoint and train/val/test split (labeled_frames/ in results).
+task: predict
+model: ephys_BottomCamera_Pylon2Test2
+labeled_frames: true

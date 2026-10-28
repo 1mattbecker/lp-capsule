@@ -87,3 +87,12 @@ def test_train_assets_and_round_trip():
 def test_task_required():
     with pytest.raises(ValueError, match="task"):
         parse_config({"model": "m"})
+
+
+def test_labeled_frames_without_videos():
+    config = parse_config({"task": "predict", "model": "m", "labeled_frames": True})
+    assert config.labeled_frames and config.videos == ()
+    assert assets_of(config) == ["m"]
+    assert parse_config(load_config_text(dump(config))) == config
+    with pytest.raises(ValueError, match="labeled_frames"):
+        parse_config({"task": "predict", "model": "m"})
