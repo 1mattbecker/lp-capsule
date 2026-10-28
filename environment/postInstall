@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -Exeuo pipefail
+
+# The image's own venv at /opt/venv is the only environment; uv finds it
+# through VIRTUAL_ENV.
+PY="${VIRTUAL_ENV:?the base image no longer sets VIRTUAL_ENV}/bin/python"
+
+# Lightning Pose's own install: ffmpeg from apt, then `pip install lightning-pose`
+# (which brings torch, DALI and OpenCV). video_clips also needs ffmpeg >= 5.1;
+# Ubuntu 24.04's is 6.1.
+apt-get update
+apt-get install -y --no-install-recommends ffmpeg git
+rm -rf /var/lib/apt/lists/*
+
+# The video-analysis library is installed without its video-clips extra, which
+# pins aind-video-utils 0.7.0: its video_clips and video_timing_qc tests pass on
+# 0.11.0. It is pinned to a commit: postInstall is cached until this file
+# changes, so a branch would freeze silently.
+VIDEO_ANALYSIS_REF=cf4c32d
+uv pip install --no-cache \
+    "lightning-pose==2.4.3" \
+    "pyyaml>=6" \
+    "aind-video-utils==0.11.0" \
+    "aind-dynamic-foraging-behavior-video-analysis @ git+https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-behavior-video-analysis.git@${VIDEO_ANALYSIS_REF}"
+
+# Fail the build rather than the run on a broken import or an ffmpeg that cannot
+# cut clips.
+"$PY" - <<'CHECK'
+import aind_video_utils, lightning_pose, torch
+from aind_dynamic_foraging_behavior_video_analysis.video_clips import check_ffmpeg
+print(check_ffmpeg())
+print(f"lightning-pose {lightning_pose.__version__}, torch {torch.__version__} (CUDA {torch.version.cuda}), aind-video-utils {aind_video_utils.__version__}")
+CHECK

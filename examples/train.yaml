@@ -1,0 +1,10 @@
+# Fine-tune Pylon2Test2 on a merged LP project (lp-relabel merge), for
+# scripts/launch.py train --name <new model asset>.
+task: train
+project: pylon2test2_r01                      # CollectedData.csv, labeled-data/, videos/
+base_config: ephys_BottomCamera_Pylon2Test2   # its training.config.yaml
+init_checkpoint: ephys_BottomCamera_Pylon2Test2
+overrides:
+  training:
+    max_epochs: 100
+    min_epochs: 100

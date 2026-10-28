@@ -1,0 +1,11 @@
+# A predict batch for scripts/launch.py: assets by name or id. The launcher
+# starts one worker run per session asset (--sessions-per-run) and rewrites
+# ids to the mount names the worker reads.
+task: predict
+model: ephys_BottomCamera_Pylon2Test2   # register it as a data asset first
+reader: dali
+precision: fp16
+videos:
+  - asset: behavior_782394_2025-04-23_10-51-14
+    camera: BottomCamera
+    windows: [[120000, 120500], [455000, 455500]]   # [start, end) source frames

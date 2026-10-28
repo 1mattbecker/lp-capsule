@@ -1,0 +1,40 @@
+[project]
+name = "lp-capsule"
+description = "Config-driven Lightning Pose predict and train on Code Ocean, with a batch launcher"
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+version = "0.1.0"
+
+# The dev environment, for tests and the launcher; environment/postInstall
+# installs the capsule's. Lightning Pose and torch are not needed for the
+# tests: they import them lazily, and use a stand-in model.
+dependencies = [
+    "aind-dynamic-foraging-behavior-video-analysis @ git+https://github.com/AllenNeuralDynamics/aind-dynamic-foraging-behavior-video-analysis.git@cf4c32d",
+    "aind-video-utils==0.11.0",
+    "codeocean>=0.16,<0.17",
+    "numpy",
+    "omegaconf>=2.3",
+    "pandas>=2.2",
+    "pyyaml>=6",
+]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["I", "F", "E", "W", "UP"]
+# Config errors are ValueErrors whatever the wrong type.
+ignore = ["TRY004"]
+
+[tool.pytest.ini_options]
+pythonpath = ["code", "tests"]
+addopts = "--strict-markers --tb=short"
+testpaths = ["tests"]

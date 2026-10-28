@@ -151,3 +151,9 @@ dmypy.json
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/*.code-snippets
+# lp-capsule additions
+workbench/
+setup_repo.sh
+configure_repo.sh
+.claude/
+runs/

@@ -2,4 +2,6 @@
 set -ex
 
 # This is the master script for the capsule. When you click "Reproducible Run", the code in this file will execute.
-python -u run_capsule.py "$@"
+# The App Panel passes `--config <text or path>`. The interpreter is the image's
+# venv (/opt/venv, where postInstall installs), not whatever `python` is first on PATH.
+"${VIRTUAL_ENV:-/opt/venv}/bin/python" -u run_capsule.py "$@"

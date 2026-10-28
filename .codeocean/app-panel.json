@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"named_parameters": true,
+	"parameters": [
+		{
+			"id": "Cf4kLp9WqT2mXs7R",
+			"name": "config",
+			"param_name": "config",
+			"description": "Run config: YAML text (task: predict or task: train), or a path to a YAML file, absolute or relative to /data or code/. See code/run_config.py and examples/.",
+			"type": "text",
+			"value_type": "string",
+			"default_value": ""
+		}
+	]
+}
