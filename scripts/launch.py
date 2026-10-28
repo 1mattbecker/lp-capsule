@@ -162,12 +162,19 @@ def resolve_config(
 
 
 def split_predict(config: PredictConfig, sessions_per_run: int) -> list[PredictConfig]:
-    """Split a predict config into runs of ``sessions_per_run`` session assets each."""
+    """Split a predict config into runs of ``sessions_per_run`` session assets each.
+
+    A config with no videos (a labeled-frames check alone) is one run; the
+    labeled-frames check runs in the first run only.
+    """
     sessions = list(dict.fromkeys(v.asset for v in config.videos))
+    if not sessions:
+        return [config]
     runs = []
     for i in range(0, len(sessions), sessions_per_run):
         group = set(sessions[i : i + sessions_per_run])
-        runs.append(replace(config, videos=tuple(v for v in config.videos if v.asset in group)))
+        videos = tuple(v for v in config.videos if v.asset in group)
+        runs.append(replace(config, videos=videos, labeled_frames=config.labeled_frames and i == 0))
     return runs
 
 
@@ -177,6 +184,8 @@ def run_label(config: RunConfig, name: str | None = None) -> str:
         return name
     assert isinstance(config, PredictConfig)
     sessions = list(dict.fromkeys(v.asset for v in config.videos))
+    if not sessions:
+        return f"{config.model}_labeled_frames"
     return sessions[0] + (f"+{len(sessions) - 1}" if len(sessions) > 1 else "")
 
 

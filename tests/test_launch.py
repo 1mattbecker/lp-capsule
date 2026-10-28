@@ -89,3 +89,11 @@ def test_merge_manifest_keeps_finished(tmp_path):
     (tmp_path / "manifest.json").write_text(json.dumps(old))
     with pytest.raises(ValueError, match="config changed"):
         launch.merge_manifest(tmp_path, new, retry=False)
+
+
+def test_labeled_frames_only_is_one_run_and_first_run_only():
+    only = parse_config({"task": "predict", "model": "m", "labeled_frames": True})
+    runs = launch.split_predict(only, 1)
+    assert len(runs) == 1 and launch.run_label(runs[0]) == "m_labeled_frames"
+    both = parse_config(load_config_text(BATCH) | {"labeled_frames": True})
+    assert [r.labeled_frames for r in launch.split_predict(both, 1)] == [True, False, False]
