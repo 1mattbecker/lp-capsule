@@ -27,7 +27,7 @@ import pandas as pd
 from aind_dynamic_foraging_behavior_video_analysis.video_clips import cut_clip
 from aind_video_utils import read_mp4_frame_index, restamp_uniform
 from bundle import Bundle, file_sha256, find_bundle
-from run_config import PredictConfig, VideoSpec, base_config_asset
+from run_config import PredictConfig, VideoSpec
 from session import local_list_dir, locate_camera
 
 
@@ -299,7 +299,7 @@ def check_labeled_frames(
     With ``labels_spec`` True the labels are the training CSV in the bundle
     (``data.csv_file``'s name), and LP rebuilds the training run's
     train/val/test split from the config's seeds. As ``<asset>/<labels.csv>``
-    they are that CSV, its image paths relative to the asset, in one set "all".
+    they are that CSV, its image paths relative to its folder, in one set "all".
     The semi-supervised losses are switched off for this, so LP builds a
     labeled-only data module; the network is unchanged.
     """
@@ -311,7 +311,7 @@ def check_labeled_frames(
     cfg = model.cfg
     if isinstance(labels_spec, str):
         labels = data_dir / labels_spec
-        images = data_dir / base_config_asset(labels_spec)
+        images = labels.parent
         if not labels.is_file():
             raise FileNotFoundError(f"no labels CSV {labels}")
     else:

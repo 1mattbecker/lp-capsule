@@ -85,8 +85,8 @@ class PredictConfig:
 class TrainConfig:
     """A train run: an LP project, a starting config, optionally a checkpoint."""
 
-    # One asset, or several whose labeled-data/ and videos/ are merged into one
-    # data_dir; csv_file is read from the first that has it.
+    # One asset (or <asset>/<folder>), or several whose labeled-data/ and videos/
+    # are merged into one data_dir; csv_file is read from the first that has it.
     project: tuple[str, ...]
     base_config: str
     init_checkpoint: str | None = None
@@ -129,6 +129,14 @@ def _name(value: Any, where: str) -> str:
 def _flag(value: Any, where: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{where} must be true or false, got {value!r}")
+    return value
+
+
+def _asset_path(value: Any, where: str) -> str:
+    """Return ``<asset>`` or ``<asset>/<relative path>``."""
+    parts = PurePosixPath(value).parts if isinstance(value, str) and value else ()
+    if not parts or value.startswith("/") or ".." in parts:
+        raise ValueError(f"{where} must be <asset> or <asset>/<folder>, got {value!r}")
     return value
 
 
@@ -257,7 +265,7 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
     if not projects:
         raise ValueError("project must be an asset name or a non-empty list of them")
     return TrainConfig(
-        project=tuple(_name(p, "project") for p in projects),
+        project=tuple(_asset_path(p, "project") for p in projects),
         base_config=base,
         init_checkpoint=None if init is None else _name(init, "init_checkpoint"),
         csv_file=csv_file,
@@ -288,7 +296,7 @@ def assets_of(config: RunConfig) -> list[str]:
         if isinstance(config.labeled_frames, str):
             names.append(base_config_asset(config.labeled_frames))
     else:
-        names = [*config.project, base_config_asset(config.base_config)]
+        names = [*map(base_config_asset, config.project), base_config_asset(config.base_config)]
         if config.init_checkpoint:
             names.append(config.init_checkpoint)
     return list(dict.fromkeys(names))

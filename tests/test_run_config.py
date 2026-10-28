@@ -113,3 +113,12 @@ def test_project_list_and_labels_csv():
     assert parse_config(load_config_text(dump(predict))) == predict
     with pytest.raises(ValueError, match="labeled_frames"):
         parse_config({"task": "predict", "model": "m", "labeled_frames": "just.csv"})
+
+
+def test_project_folder_inside_asset():
+    train = parse_config(
+        {"task": "train", "project": ["labels/round1", "old"], "base_config": "old"}
+    )
+    assert train.project == ("labels/round1", "old") and assets_of(train) == ["labels", "old"]
+    with pytest.raises(ValueError, match="project"):
+        parse_config({"task": "train", "project": "../x", "base_config": "old"})

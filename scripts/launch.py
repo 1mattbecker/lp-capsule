@@ -156,7 +156,7 @@ def resolve_config(
     else:
         resolved = replace(
             config,
-            project=tuple(asset(p).name for p in config.project),
+            project=tuple(in_asset(p) for p in config.project),
             base_config=in_asset(config.base_config),
             init_checkpoint=(
                 asset(config.init_checkpoint).name if config.init_checkpoint else None
