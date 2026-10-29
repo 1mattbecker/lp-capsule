@@ -15,7 +15,8 @@ aind-video-utils:
   the unlabeled video of the semi-supervised losses.
 
 Writes ``<out>/p2t2_clean/{labeled-data,videos}/`` and ``checks.csv``; upload
-the ``p2t2_clean`` folder as the data asset.
+the ``p2t2_clean`` folder as the data asset. Resumable: a clip whose check
+record (``<out>/p2t2_clean_checks/<clip>.csv``) exists is done.
 
     uv run python experiments/bottomcam_exp1/build_p2t2_clean.py --out ~/LPProjects
 """
@@ -25,6 +26,8 @@ from __future__ import annotations
 import argparse
 import shutil
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -67,11 +70,19 @@ LOSSLESS = profile("-preset", "fast", "-qp", "0")
 CLEAN = profile("-preset", "slow", "-crf", "18")
 
 
-def fetch(url: str, path: Path) -> Path:
+def fetch(url: str, path: Path, tries: int = 6) -> Path:
+    """Download ``url`` to ``path``, retrying network errors (the Mac's network drops)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url) as response, path.open("wb") as f:
-        shutil.copyfileobj(response, f)
-    return path
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response, path.open("wb") as f:
+                shutil.copyfileobj(response, f)
+            return path
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == tries - 1:
+                raise
+            time.sleep(10 * 2**attempt)
+    raise AssertionError("unreachable")
 
 
 def transcode(src: Path, dst: Path, codec: EncodingProfile) -> Path:
@@ -82,7 +93,10 @@ def transcode(src: Path, dst: Path, codec: EncodingProfile) -> Path:
     return dst
 
 
-def one_clip(clip: str, images: list[str], out: Path) -> list[dict]:
+def one_clip(clip: str, images: list[str], out: Path, done_dir: Path) -> pd.DataFrame:
+    done = done_dir / f"{clip}.csv"
+    if done.is_file():
+        return pd.read_csv(done)
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
         src = fetch(f"{SOURCE}/videos/{clip}.mp4", Path(tmp) / "src.mp4")
@@ -118,11 +132,13 @@ def one_clip(clip: str, images: list[str], out: Path) -> list[dict]:
                 }
             )
         transcode(src, out / "videos" / f"{clip}.mp4", CLEAN)
+    # Last: its existence marks the clip done.
+    pd.DataFrame(rows).to_csv(done, index=False)
     print(
         f"  {clip}: {len(images)} labeled, {sum(r['neighbours_written'] for r in rows)} neighbours",
         flush=True,
     )
-    return rows
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
@@ -142,9 +158,11 @@ def main() -> None:
         by_clip = dict(sorted(by_clip.items())[: args.clips])
     print(f"{sum(map(len, by_clip.values()))} labeled frames in {len(by_clip)} clips -> {out}")
     (out / "videos").mkdir(parents=True, exist_ok=True)
+    done_dir = args.out / "p2t2_clean_checks"
+    done_dir.mkdir(exist_ok=True)
     with ThreadPoolExecutor(args.workers) as pool:
-        results = list(pool.map(lambda c: one_clip(c, by_clip[c], out), sorted(by_clip)))
-    checks = pd.DataFrame([r for rows in results for r in rows])
+        results = list(pool.map(lambda c: one_clip(c, by_clip[c], out, done_dir), sorted(by_clip)))
+    checks = pd.concat(results, ignore_index=True)
     checks.to_csv(out / "checks.csv", index=False)
     print(
         f"done: {len(checks)} frames, max labeled-vs-clip diff "
