@@ -1,5 +1,5 @@
 # Fine-tune Pylon2Test2 on round-1 labels, for
-#   uv run scripts/launch.py train examples/train.yaml --name pylon2test2_r01
+#   uv run scripts/launch.py train examples/train.yaml --name pylon2test2_r01b
 # The old labeled-data/ and videos/ come from the model asset, the new frames
 # and the train CSV from the labels asset (uploaded inside a folder of the same
 # name); the worker merges them into one data_dir.
@@ -15,3 +15,8 @@ overrides:
     lr_scheduler_params:
       multisteplr:
         milestones: [50, 67, 83]   # the original 150/200/250 of 300, scaled to 100
+    # Fine-tuning rate, 10x below the from-scratch default of 1e-3: at 1e-3 the
+    # backbone's unfreezing at epoch 20 knocked the trained model off course
+    # (val error 2 -> 6-9 px), and LP kept the epoch-4 checkpoint.
+    optimizer_params:
+      learning_rate: 1.0e-4
