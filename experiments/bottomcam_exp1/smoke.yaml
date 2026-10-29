@@ -12,7 +12,12 @@ defaults:
     csv_file: train_all.csv
     overrides:
       model: {losses_to_use: []}
-      training: {max_epochs: 5, min_epochs: 5, ckpt_every_n_epochs: 5, unfreezing_epoch: 2}
+      training:
+        max_epochs: 5
+        min_epochs: 5
+        ckpt_every_n_epochs: 5
+        unfreezing_epoch: 2
+        lr_scheduler_params: {multisteplr: {milestones: [3, 4]}}   # LP: all <= max_epochs
 runs:
   - name: exp1_smoke_all
   - name: exp1_smoke_ctx
