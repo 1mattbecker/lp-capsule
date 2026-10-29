@@ -149,6 +149,8 @@ def test_run_without_results_is_queued_again(tmp_path):
     record = {"label": "r", "status": "running", "computation_id": "c1"}
     launch.advance(client, record, tmp_path, None)
     assert record["status"] == "queued" and record["attempts"] == 2
+    assert record["not_before"] > launch.time.time() + 100
+    assert [launch.retry_delay(n) for n in (2, 3, 6, 7)] == [120, 240, 1800, 1800]
     record.update(status="running", attempts=launch.MAX_ATTEMPTS)
     launch.advance(client, record, tmp_path, None)
     assert record["status"] == "failed"

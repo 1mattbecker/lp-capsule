@@ -20,7 +20,8 @@ the trained model is a data asset ``predict`` can name.
 named ``name``; predict runs are not captured.
 
 A run that fails without any results (Code Ocean's "Selected Machine
-Unavailable") is queued again, up to ``MAX_ATTEMPTS`` launches.
+Unavailable") is queued again, up to ``MAX_ATTEMPTS`` launches, each after a
+longer wait (``retry_delay``).
 
 A run counts as done only when Code Ocean says it succeeded, its exit code is
 0, and its ``run.json`` says ``status: ok``. ``<out>/manifest.json`` is
@@ -96,7 +97,9 @@ POLL_SECONDS = 60
 # Consecutive API errors on one run before giving up on it.
 MAX_ERRORS = 10
 # Launches of one run that ended without results (no machine) before giving up.
-MAX_ATTEMPTS = 6
+MAX_ATTEMPTS = 20
+# Wait before relaunching a run that got no machine: doubles from 2 min to 30 min.
+RETRY_DELAY_S = (120, 1800)
 ACTIVE_STATES = {
     ComputationState.Initializing,
     ComputationState.Running,
@@ -288,8 +291,10 @@ def advance(client: CodeOcean, record: dict[str, Any], out: Path, capture: str |
         )
         if not ok and not run and record.get("attempts", 1) < MAX_ATTEMPTS:
             # No results at all: the worker never ran (usually no machine free).
-            record.update(status="queued", attempts=record.get("attempts", 1) + 1)
-            print(f"  ↻ {label}: ended without results, queued again", flush=True)
+            attempts = record.get("attempts", 1) + 1
+            delay = retry_delay(attempts)
+            record.update(status="queued", attempts=attempts, not_before=time.time() + delay)
+            print(f"  ↻ {label}: ended without results, relaunch in {delay // 60} min", flush=True)
             return
         if not ok:
             end = comp.end_status.value if comp.end_status else "unknown"
@@ -312,6 +317,12 @@ def advance(client: CodeOcean, record: dict[str, Any], out: Path, capture: str |
         elif asset.state == DataAssetState.Failed:
             record.update(status="failed", error=f"capture of {asset.id} failed")
             print(f"  ✗ {label}: {record['error']}", flush=True)
+
+
+def retry_delay(attempts: int) -> int:
+    """Seconds to wait before launch number ``attempts`` (2, 3, ...) of a run."""
+    first, cap = RETRY_DELAY_S
+    return min(first * 2 ** (attempts - 2), cap)
 
 
 def note_error(record: dict[str, Any], error: Exception, final_status: str) -> None:
@@ -358,17 +369,18 @@ def run_queue(
             except Exception as e:  # noqa: BLE001 -- retried next pass
                 print(f"  ! counting active runs: {type(e).__name__}: {e}", flush=True)
                 free = 0
-            while free > 0 and queue:
-                record = queue[0]
+            ready = [r for r in queue if r.get("not_before", 0) <= time.time()]
+            while free > 0 and ready:
+                record = ready.pop(0)
                 try:
                     launch(client, capsule_id, record)
                     record["_errors"] = 0
-                    queue.pop(0)
+                    queue.remove(record)
                     free -= 1
                 except Exception as e:  # noqa: BLE001 -- retried next pass
                     note_error(record, e, "launch_failed")
                     if record["status"] == "launch_failed":
-                        queue.pop(0)
+                        queue.remove(record)
                     break
         write_manifest(out, manifest)
         in_flight = sum(1 for r in manifest if r["status"] in IN_FLIGHT)
