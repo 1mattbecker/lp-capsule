@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import csv
 import os
+import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, Self
 
 import pandas as pd
 from bundle import (
@@ -186,8 +188,6 @@ def _frame_number(image: str) -> int:
 
 def decoded_frames(mp4: Path) -> int:
     """Return the number of frames ffmpeg decodes from a video (not its index count)."""
-    import subprocess
-
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
          "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(mp4)],
@@ -269,6 +269,58 @@ def add_context(project: Path, labels: Path, work: Path) -> dict[str, Any]:
         "written": sum(n for _, n in results.values()),
         "max_center_mean_abs_diff": max((d for d, _ in results.values()), default=None),
     }
+
+
+class GpuMemory:
+    """Sample ``nvidia-smi`` while training: the GPU, and the peak memory in use.
+
+    ``torch.cuda.max_memory_allocated`` misses DALI's buffers (the unlabeled
+    video batch, where 16 GB ran out before), so the whole device is sampled.
+    """
+
+    QUERY: ClassVar[list[str]] = ["nvidia-smi", "--query-gpu=name,memory.total,memory.used",
+             "--format=csv,noheader,nounits", "-i", "0"]  # fmt: skip
+
+    def __init__(self, every_s: float = 5.0) -> None:
+        self.every_s = every_s
+        self.name: str | None = None
+        self.total_mib = 0
+        self.peak_mib = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _sample(self) -> None:
+        try:
+            out = subprocess.run(
+                self.QUERY, check=False, capture_output=True, text=True, timeout=10
+            ).stdout
+            name, total, used = (x.strip() for x in out.strip().split(","))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return
+        self.name, self.total_mib = name, int(total)
+        self.peak_mib = max(self.peak_mib, int(used))
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.every_s):
+            self._sample()
+
+    def __enter__(self) -> Self:
+        self._sample()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stop.set()
+        self._thread.join()
+        self._sample()
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "total_gib": round(self.total_mib / 1024, 2),
+            "peak_used_gib": round(self.peak_mib / 1024, 2),
+            "sampled_every_s": self.every_s,
+        }
 
 
 def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dict[str, Any]]:
@@ -364,7 +416,13 @@ def run_train(
     cfg, info = build_cfg(config, data_dir, work)
     record.update(train=info)
     model_dir = results_dir / "model"
-    train(cfg, model_dir=model_dir)
+    gpu = GpuMemory()
+    try:
+        with gpu:
+            train(cfg, model_dir=model_dir)
+    finally:
+        # Also after an out-of-memory error: the peak says how far over it went.
+        record.update(gpu=gpu.summary())
 
     # The temporary init checkpoint is gone after the run; run.json names its source.
     saved = model_dir / "config.yaml"

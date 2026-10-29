@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import itertools
 import shutil
 from pathlib import Path
 
 import pytest
 from conftest import FIXTURES, PYLON2_NAMES, write
 from run_config import TrainConfig
-from train import build_cfg, pixel_error_summary
+from train import GpuMemory, build_cfg, pixel_error_summary
 
 
 @pytest.fixture
@@ -153,3 +154,21 @@ def test_context_frames_from_clip(project, pylon2_bundle, mp4, tmp_path):
     frame(20, png)  # labeled image no longer frame 10 of the clip
     with pytest.raises(ValueError, match="not the folder's clip"):
         build_cfg(config, data, tmp_path / "w2")
+
+
+def test_gpu_memory_peak(monkeypatch):
+    used = itertools.chain([1000, 9000, 4000], itertools.repeat(2000))
+
+    def fake_run(*args, **kwargs):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(stdout=f"NVIDIA A10G, 23028, {next(used)}\n")
+
+    monkeypatch.setattr("train.subprocess.run", fake_run)
+    gpu = GpuMemory(every_s=0.01)
+    with gpu:
+        while gpu.peak_mib < 9000:
+            pass
+    summary = gpu.summary()
+    assert summary["name"] == "NVIDIA A10G" and summary["peak_used_gib"] == round(9000 / 1024, 2)
+    assert summary["total_gib"] == round(23028 / 1024, 2)
