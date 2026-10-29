@@ -178,15 +178,37 @@ def _image_diff(a: Path, b: Path) -> float:
     return float(np.abs(x - y).mean()) if x.shape == y.shape else float("inf")
 
 
+def _frame_number(image: str) -> int:
+    """Return the frame number in an image name, ``img025.png`` -> 25."""
+    digits = "".join(c for c in image.rsplit("/", 1)[-1] if c.isdigit())
+    return int(digits)
+
+
+def decoded_frames(mp4: Path) -> int:
+    """Return the number of frames ffmpeg decodes from a video (not its index count)."""
+    import subprocess
+
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(mp4)],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    return int(out.strip().split(",")[0])
+
+
 def add_context(project: Path, labels: Path, work: Path) -> dict[str, Any]:
     """Write missing neighbours of the labeled PNGs in folders cut from a clip.
 
     ``project`` is a symlinked merge (:func:`assemble_project`). A folder
     ``labeled-data/<f>`` with ``videos/<f>.mp4`` becomes a real folder of links
     plus the new PNGs (``video_clips.add_context_frames``, frame = the PNG's
-    digits). First each folder's first labeled frame is decoded from the clip and
-    compared with the labeled PNG, so a clip that is not the folder's source
-    fails the run instead of training on wrong neighbours.
+    digits). First each folder's first and last labeled frames are decoded from
+    the clip and compared with the labeled PNGs, so a clip that is not the
+    folder's source fails the run instead of training on wrong neighbours.
+
+    Neighbours stop at the clip's last *decoded* frame: some clips' MP4 index
+    lists more samples than decode (502 decoded, 591 indexed), and the labeled
+    PNGs are numbered by decoded frame.
     """
     from aind_dynamic_foraging_behavior_video_analysis.video_clips import add_context_frames
 
@@ -196,33 +218,44 @@ def add_context(project: Path, labels: Path, work: Path) -> dict[str, Any]:
         if len(parts) == 3 and parts[2].endswith(".png"):
             by_folder.setdefault(parts[1], []).append(image)
     folders = {
-        f: imgs for f, imgs in by_folder.items() if (project / "videos" / f"{f}.mp4").is_file()
+        f: sorted(imgs, key=_frame_number)
+        for f, imgs in by_folder.items()
+        if (project / "videos" / f"{f}.mp4").is_file()
     }
     stage = work / "context"
 
     def one(folder: str) -> tuple[float, int]:
         root = stage / folder
         clip_dir = project / "videos"
-        # The first labeled frame, decoded from the clip, against the labeled PNG.
+        images = folders[folder]
+        n_decoded = decoded_frames(clip_dir / f"{folder}.mp4")
+        # The first and last labeled frames, decoded from the clip, against the PNGs.
         check = root / "check"
         (check / folder).mkdir(parents=True)
-        (check / "CollectedData.csv").write_text(folders[folder][0] + "\n")
+        (check / "CollectedData.csv").write_text(f"{images[0]}\n{images[-1]}\n")
         add_context_frames(check, clip_dir, offsets=(0,))
-        name = folders[folder][0].split("/")[-1]
-        diff = _image_diff(check / folder / name, project / folders[folder][0])
-        if diff > CONTEXT_MAX_MEAN_DIFF:
-            raise ValueError(
-                f"{folder}/{name} differs from frame {name} of videos/{folder}.mp4 "
-                f"(mean |diff| {diff:.2f}): not the folder's clip?"
-            )
-        # The folder as links, then its missing neighbours.
+        diff = 0.0
+        for image in dict.fromkeys((images[0], images[-1])):
+            name = image.split("/")[-1]
+            d = _image_diff(check / folder / name, project / image)
+            if d > CONTEXT_MAX_MEAN_DIFF:
+                raise ValueError(
+                    f"{folder}/{name} differs from frame {name} of videos/{folder}.mp4 "
+                    f"(mean |diff| {d:.2f}): not the folder's clip?"
+                )
+            diff = max(diff, d)
+        # The folder as links, then each labeled frame's neighbours inside the clip.
         dest = root / "labeled" / folder
         dest.mkdir(parents=True)
         for entry in (project / "labeled-data" / folder).iterdir():
             (dest / entry.name).symlink_to(entry.resolve())
-        (root / "labeled" / "CollectedData.csv").write_text("\n".join(folders[folder]) + "\n")
-        written = add_context_frames(root / "labeled", clip_dir)
-        return diff, len(written)
+        written = 0
+        for image in images:
+            k = _frame_number(image)
+            offsets = [d for d in (-2, -1, 1, 2) if 0 <= k + d < n_decoded]
+            (root / "labeled" / "CollectedData.csv").write_text(image + "\n")
+            written += len(add_context_frames(root / "labeled", clip_dir, offsets=offsets))
+        return diff, written
 
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
         results = dict(zip(folders, pool.map(one, folders)))
