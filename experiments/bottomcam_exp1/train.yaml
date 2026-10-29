@@ -1,3 +1,4 @@
+# The six runs that read no video: launched first (Flex, 16 GB fits: smoke peak 6.5 GiB).
 # Bottom-camera training experiment: does FIP data hurt ephys accuracy (and
 # the reverse), do the context model and the semi-supervised losses help, and
 # does fine-tuning Pylon2Test2 match training from scratch.
@@ -31,13 +32,6 @@ runs:
     csv_file: train_ephys.csv
   - name: exp1_fip          # fip only: does adding ephys hurt FIP?
     csv_file: train_fip.csv
-  - name: exp1_all_ctx      # context model (t-2..t+2 = +-4 ms at 500 Hz)
-    context_frames_from_videos: true   # Pylon2Test2's frames lack neighbours
-    overrides:
-      model: {model_type: heatmap_mhcrnn}
-  - name: exp1_all_semi     # Pylon2Test2's unsupervised losses, ephys + FIP clips
-    overrides:
-      model: {losses_to_use: [pca_singleview, temporal]}
   - name: exp1_all_ft       # fine-tune Pylon2Test2 on all frames (r01b's settings)
     init_checkpoint: ephys_BottomCamera_Pylon2Test2
     overrides: &finetune
