@@ -11,7 +11,7 @@
 defaults:
   train:
     project:
-      - labeleddata_bottomcam_exp1/train
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
       - pylon2test2_r01_labels/pylon2test2_r01_labels
       - ephys_BottomCamera_Pylon2Test2
     base_config: ephys_BottomCamera_Pylon2Test2   # resnet50_animal_ap10k heatmap, 384x384
