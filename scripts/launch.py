@@ -188,6 +188,39 @@ def resolve_config(
     return resolved, [by_name[n] for n in assets_of(resolved)]
 
 
+def asset_paths(config: RunConfig) -> list[str]:
+    """Return the ``<asset>/<path>`` entries a config names inside assets."""
+    if isinstance(config, PredictConfig):
+        labeled = config.labeled_frames
+        paths = [labeled] if isinstance(labeled, str) else list(labeled or ())
+    else:
+        paths = [*config.project, config.base_config]
+    return [p for p in paths if "/" in p]
+
+
+def check_asset_paths(
+    client: CodeOcean, config: RunConfig, assets: list[DataAsset], seen: dict[str, bool]
+) -> None:
+    """Fail if a path a config names is not in its asset, as Code Ocean lists it.
+
+    Only internal assets can be listed; others (external S3) are skipped.
+    """
+    by_name = {a.name: a for a in assets}
+    for path in asset_paths(config):
+        first, rest = path.split("/", 1)
+        if path not in seen:
+            parent, _, name = rest.rpartition("/")
+            try:
+                folder = client.data_assets.list_data_asset_files(by_name[first].id, parent)
+            except Exception:  # noqa: BLE001 -- not listable: the worker checks at run time
+                seen[path] = True
+                continue
+            seen[path] = any(item.name == name for item in folder.items)
+            if not seen[path]:
+                there = ", ".join(item.name for item in folder.items) or "nothing"
+                raise LookupError(f"{path}: no {name!r} in {first}/{parent} (it has: {there})")
+
+
 def split_predict(config: PredictConfig, sessions_per_run: int) -> list[PredictConfig]:
     """Split a predict config into runs of ``sessions_per_run`` session assets each.
 
@@ -405,9 +438,11 @@ def plan(
     batch) only train runs are captured, as models.
     """
     cache: dict[str, DataAsset] = {}
+    checked: dict[str, bool] = {}
     records = []
     for config, name in zip(configs, names):
         resolved, assets = resolve_config(client, config, cache)
+        check_asset_paths(client, resolved, assets, checked)
         record: dict[str, Any] = {
             "label": run_label(resolved, name),
             "status": "queued",

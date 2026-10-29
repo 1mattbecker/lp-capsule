@@ -35,6 +35,9 @@ class FakeAssets:
             "sess_c": "c" * 8 + "-0000-0000-0000-" + "0" * 12,
         }
 
+    def list_data_asset_files(self, asset_id, path=""):
+        raise RuntimeError("not listable in tests")
+
     def get_data_asset(self, asset_id):
         return SimpleNamespace(id=asset_id, name="model_x")
 
@@ -154,3 +157,21 @@ def test_run_without_results_is_queued_again(tmp_path):
     record.update(status="running", attempts=launch.MAX_ATTEMPTS)
     launch.advance(client, record, tmp_path, None)
     assert record["status"] == "failed"
+
+
+def test_asset_paths_checked_against_listing():
+    config = parse_config(
+        {"task": "train", "project": ["sess_a/up/train", "sess_b"], "base_config": "sess_b"}
+    )
+    tree = {"up": ["train", "test"], "": ["up"]}
+
+    class Listing(FakeAssets):
+        def list_data_asset_files(self, asset_id, path=""):
+            return SimpleNamespace(items=[SimpleNamespace(name=n) for n in tree[path]])
+
+    client = SimpleNamespace(data_assets=Listing())
+    resolved, assets = launch.resolve_config(client, config, {})
+    launch.check_asset_paths(client, resolved, assets, {})
+    tree["up"] = ["test"]
+    with pytest.raises(LookupError, match="no 'train' in sess_a/up"):
+        launch.check_asset_paths(client, resolved, assets, {})
