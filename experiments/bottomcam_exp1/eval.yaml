@@ -6,10 +6,10 @@
 defaults:
   predict:
     labeled_frames:
-      - labeleddata_bottomcam_exp1/bottomcam_exp1/test/test_ephys_id.csv
-      - labeleddata_bottomcam_exp1/bottomcam_exp1/test/test_ephys_ood.csv
-      - labeleddata_bottomcam_exp1/bottomcam_exp1/test/test_fip_id.csv
-      - labeleddata_bottomcam_exp1/bottomcam_exp1/test/test_fip_ood.csv
+      - labeleddata_bottomcam_exp1/test/test_ephys_id.csv
+      - labeleddata_bottomcam_exp1/test/test_ephys_ood.csv
+      - labeleddata_bottomcam_exp1/test/test_fip_id.csv
+      - labeleddata_bottomcam_exp1/test/test_fip_ood.csv
 runs:
   - {name: eval_pylon2test2, model: ephys_BottomCamera_Pylon2Test2}
   - {name: eval_pylon2test2_r01b, model: pylon2test2_r01b}

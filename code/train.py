@@ -132,7 +132,9 @@ def assemble_project(
                 link.symlink_to(entry)
     with_csv = [root for root in roots if (root / csv_file).is_file()]
     if not with_csv:
-        raise FileNotFoundError(f"no project asset has {csv_file}: {list(projects)}")
+        found = {p: sorted(x.name for x in r.iterdir())[:20] if r.is_dir() else "missing"
+                 for p, r in zip(projects, roots)}  # fmt: skip
+        raise FileNotFoundError(f"no project asset has {csv_file}; their contents: {found}")
     (merged / csv_file).symlink_to(with_csv[0] / csv_file)
     return merged
 
