@@ -29,8 +29,6 @@ Train::
     base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>.yaml
     init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune from it
     overrides: {training: {max_epochs: 100, min_epochs: 100}}
-    context_frames_from_videos: false   # write t-2..t+2 of labeled frames from
-                                        # videos/<folder>.mp4 where missing
 
 This module imports nothing heavy, so the launcher uses it too.
 """
@@ -103,9 +101,6 @@ class TrainConfig:
     overrides: dict[str, Any] = field(default_factory=dict)
     # Predict the project's videos/ after training (slow on long videos).
     predict_videos: bool = False
-    # For context models: write the neighbours of labeled frames that lack them,
-    # from the clip each labeled-data folder was cut from (see train.add_context).
-    context_frames_from_videos: bool = False
     task: str = "train"
 
     def __post_init__(self) -> None:
@@ -294,7 +289,6 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
             "csv_file",
             "overrides",
             "predict_videos",
-            "context_frames_from_videos",
         },
         "train",
     )
@@ -324,9 +318,6 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
         csv_file=csv_file,
         overrides=overrides,
         predict_videos=predict_videos,
-        context_frames_from_videos=_flag(
-            raw.get("context_frames_from_videos", False), "context_frames_from_videos"
-        ),
     )
 
 
@@ -398,7 +389,6 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
         "csv_file": config.csv_file,
         "overrides": config.overrides,
         "predict_videos": config.predict_videos,
-        **({"context_frames_from_videos": True} if config.context_frames_from_videos else {}),
     }
 
 

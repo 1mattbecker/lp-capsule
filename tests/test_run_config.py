@@ -147,12 +147,3 @@ def test_labeled_frames_list_and_checkpoint():
                 {"labeled_frames": ["a/x.csv", 3]}):  # fmt: skip
         with pytest.raises(ValueError):
             parse_config({"task": "predict", "model": "m", "labeled_frames": True, **bad})
-
-
-def test_context_frames_from_videos():
-    train = parse_config({"task": "train", "project": "p", "base_config": "m",
-                          "context_frames_from_videos": True})  # fmt: skip
-    assert train.context_frames_from_videos
-    assert parse_config(load_config_text(dump(train))) == train
-    assert "context_frames" not in dump(parse_config(
-        {"task": "train", "project": "p", "base_config": "m"}))  # fmt: skip

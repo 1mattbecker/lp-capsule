@@ -48,8 +48,6 @@ base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>
 init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune
 overrides: {training: {max_epochs: 100, min_epochs: 100, ckpt_every_n_epochs: 25}}
 predict_videos: false
-context_frames_from_videos: false       # context models: write t-2..t+2 of labeled PNGs
-                                        # from videos/<folder>.mp4 where missing
 ```
 
 The `config` field takes YAML text, or a path to a YAML file (absolute, or

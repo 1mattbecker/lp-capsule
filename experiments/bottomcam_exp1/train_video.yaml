@@ -1,0 +1,37 @@
+# The two runs that read video: Pylon2Test2's labeled frames and clips come from
+# p2t2_clean (build_p2t2_clean.py: neighbours written, clips transcoded to
+# their displayed frames), not from the model asset, whose clips DALI misreads.
+# Bottom-camera training experiment: does FIP data hurt ephys accuracy (and
+# the reverse), do the context model and the semi-supervised losses help, and
+# does fine-tuning Pylon2Test2 match training from scratch.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp1/train_video.yaml \
+#       --out runs/exp1/train_video --max-concurrent 2
+# Data: bottomcam_exp1 (build_data.py; train/ CSVs, FIP labeled-data and
+# unlabeled FIP clips), round-1 labeled-data, Pylon2Test2's labeled-data and
+# ephys clips, merged into one project. Held-out mice and test frames are in
+# no train CSV. Every run keeps LP's best checkpoint and every-n-epochs ones,
+# so best and last are both scored (eval.yaml).
+defaults:
+  train:
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean             # Pylon2Test2's frames with neighbours, clean clips
+    base_config: ephys_BottomCamera_Pylon2Test2   # resnet50_animal_ap10k heatmap, 384x384
+    csv_file: train_all.csv
+    overrides:
+      model:
+        losses_to_use: []         # supervised; run all_semi turns Pylon2Test2's losses on
+      training:
+        max_epochs: 300           # milestones 150/200/250, lr 1e-3: the base config's
+        min_epochs: 300
+        ckpt_every_n_epochs: 50   # keeps epoch=299 (last) besides LP's best
+        rng_seed_data_pt: 0
+        rng_seed_model_pt: 0
+runs:
+  - name: exp1_all_ctx      # context model (t-2..t+2 = +-4 ms at 500 Hz)
+    overrides:
+      model: {model_type: heatmap_mhcrnn}
+  - name: exp1_all_semi     # Pylon2Test2's unsupervised losses, ephys + FIP clips
+    overrides:
+      model: {losses_to_use: [pca_singleview, temporal]}
