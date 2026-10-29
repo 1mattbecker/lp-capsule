@@ -157,3 +157,7 @@ setup_repo.sh
 configure_repo.sh
 .claude/
 runs/
+
+# Local planning notes (Mac paths, asset ids); not published
+LP_CAPSULE_PLAN.md
+LP_CAPSULE_HANDOFF.md
