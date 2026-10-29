@@ -74,11 +74,15 @@ def rename_head_keys(state: dict[str, Any]) -> dict[str, Any]:
     return {f"head.{k}" if k.startswith("upsampling_layers.") else k: v for k, v in state.items()}
 
 
-def load_model(bundle: Bundle, batch_size: int, precision: str, work: Path) -> tuple[Any, int]:
+def load_model(
+    bundle: Bundle, batch_size: int, precision: str, work: Path, videos: bool = True
+) -> tuple[Any, int]:
     """Return an LP ``Model`` holding the bundle's weights, and its batch size.
 
     The keypoint names are written into the config in memory: LP's prediction
-    handler refuses a config without ``data.keypoint_names``.
+    handler refuses a config without ``data.keypoint_names``. Without ``videos``
+    (labeled frames only) context models load too: LP reads their neighbours
+    from the labeled images' folders.
     """
     from lightning_pose.api.model import Model
     from lightning_pose.api.model_config import ModelConfig
@@ -86,7 +90,7 @@ def load_model(bundle: Bundle, batch_size: int, precision: str, work: Path) -> t
 
     config = ModelConfig.from_yaml_file(bundle.config)
     cfg = config.cfg
-    if cfg.model.model_type != "heatmap":
+    if cfg.model.model_type != "heatmap" and videos:
         # Context models read neighbouring frames, which a clip's first and last
         # frames lack; not supported until a model needs it.
         raise NotImplementedError(f"model type {cfg.model.model_type} is unsupported")
@@ -292,9 +296,14 @@ def predict_video(
 
 
 def check_labeled_frames(
-    model: Any, bundle: Bundle, labels_spec: bool | str, data_dir: Path, out_dir: Path
+    model: Any,
+    bundle: Bundle,
+    labels_spec: bool | str,
+    data_dir: Path,
+    out_dir: Path,
+    prefix: str = "",
 ) -> dict[str, Any]:
-    """Predict labeled frames; write pixel errors to ``out_dir``.
+    """Predict labeled frames; write pixel errors to ``out_dir``, names prefixed.
 
     With ``labels_spec`` True the labels are the training CSV in the bundle
     (``data.csv_file``'s name), and LP rebuilds the training run's
@@ -338,11 +347,11 @@ def check_labeled_frames(
     lp_out = model.image_preds_dir() / labels.name
     out_dir.mkdir(parents=True, exist_ok=True)
     for csv in lp_out.glob("predictions*.csv"):
-        shutil.copy(csv, out_dir / csv.name)
+        shutil.copy(csv, out_dir / f"{prefix}{csv.name}")
     # LP still splits other labels into train/val; that split means nothing here.
     summary = pixel_error_summary(lp_out, by_set=not isinstance(labels_spec, str))
     if summary is not None:
-        summary.to_csv(out_dir / "pixel_error_summary.csv", index=False)
+        summary.to_csv(out_dir / f"{prefix}pixel_error_summary.csv", index=False)
     return {
         "labels": str(labels.relative_to(data_dir)),
         "n_frames": len(result.predictions),
@@ -356,12 +365,13 @@ def run_predict(
     config: PredictConfig, data_dir: Path, results_dir: Path, work: Path, record: Any
 ) -> None:
     """Predict every video in the config, writing one CSV per video."""
-    bundle = find_bundle(data_dir / config.model)
+    bundle = find_bundle(data_dir / config.model, config.checkpoint)
     record.update(
         model={
             "asset": config.model,
             "config": str(bundle.config.relative_to(bundle.root)),
             "checkpoint": str(bundle.checkpoint.relative_to(bundle.root)),
+            "checkpoint_choice": config.checkpoint,
             "checkpoint_sha256": file_sha256(bundle.checkpoint),
             "keypoint_names": list(bundle.keypoint_names),
             "keypoint_names_from": bundle.keypoint_source,
@@ -369,7 +379,9 @@ def run_predict(
         reader=config.reader,
         precision=config.precision,
     )
-    model, batch_frames = load_model(bundle, config.batch_size, config.precision, work)
+    model, batch_frames = load_model(
+        bundle, config.batch_size, config.precision, work, videos=bool(config.videos)
+    )
     record.update(batch_size=batch_frames)
     out_dir = results_dir / "predictions"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -389,9 +401,15 @@ def run_predict(
             }
         )
         record.update(videos=videos)
-    if config.labeled_frames:
+    out = results_dir / "labeled_frames"
+    if isinstance(config.labeled_frames, tuple):
+        # Several label sets: each scored on its own, files named <csv stem>.<file>.
+        checks = []
+        for labels in config.labeled_frames:
+            prefix = f"{Path(labels).stem}."
+            checks.append(check_labeled_frames(model, bundle, labels, data_dir, out, prefix))
+            record.update(labeled_frames=checks)
+    elif config.labeled_frames:
         record.update(
-            labeled_frames=check_labeled_frames(
-                model, bundle, config.labeled_frames, data_dir, results_dir / "labeled_frames"
-            )
+            labeled_frames=check_labeled_frames(model, bundle, config.labeled_frames, data_dir, out)
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 from conftest import FIXTURES, PYLON2_NAMES, write
@@ -105,3 +106,42 @@ def test_pixel_error_summary_pooled(tmp_path):
     write(tmp_path / "predictions_pixel_error.csv", ",a,set\nimg0,1.0,train\nimg1,3.0,validation\n")
     summary = pixel_error_summary(tmp_path, by_set=False)
     assert summary.set.unique().tolist() == ["all"] and summary["mean"].iloc[0] == 2.0
+
+
+def test_context_frames_from_clip(project, pylon2_bundle, mp4, tmp_path):
+    """Neighbours of a clip's labeled PNG come from videos/<folder>.mp4."""
+    import subprocess
+
+    data = project.parent
+    shutil.move(pylon2_bundle, data / pylon2_bundle.name)
+    old = data / "clips"
+    header = (FIXTURES / "pylon2test2.labels_header.csv").read_text()
+    write(old / "CollectedData.csv", header + "labeled-data/c1/img10.png" + ",1" * 22 + "\n")
+    (old / "videos").mkdir(parents=True)
+    shutil.copy(mp4, old / "videos/c1.mp4")
+    png = old / "labeled-data/c1/img10.png"
+    png.parent.mkdir(parents=True)
+
+    def frame(k):
+        subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-y", "-i", str(mp4),
+             "-vf", f"select=eq(n\\,{k})", "-frames:v", "1", "-fps_mode", "passthrough",
+             str(png)],
+            check=True,
+        )  # fmt: skip
+
+    frame(10)
+    config = TrainConfig(
+        project=("clips",), base_config=pylon2_bundle.name, context_frames_from_videos=True
+    )
+    cfg, info = build_cfg(config, data, tmp_path / "w1")
+    folder = Path(cfg.data.data_dir) / "labeled-data/c1"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "img08.png", "img09.png", "img10.png", "img11.png", "img12.png"
+    ]  # fmt: skip
+    assert not any((old / "labeled-data/c1").glob("img0*.png"))  # the asset is untouched
+    assert info["context_frames"]["written"] == 4
+    assert info["context_frames"]["max_center_mean_abs_diff"] == 0
+    frame(20)  # labeled image no longer frame 10 of the clip
+    with pytest.raises(ValueError, match="not the folder's clip"):
+        build_cfg(config, data, tmp_path / "w2")

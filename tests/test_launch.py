@@ -97,3 +97,58 @@ def test_labeled_frames_only_is_one_run_and_first_run_only():
     assert len(runs) == 1 and launch.run_label(runs[0]) == "m_labeled_frames"
     both = parse_config(load_config_text(BATCH) | {"labeled_frames": True})
     assert [r.labeled_frames for r in launch.split_predict(both, 1)] == [True, False, False]
+
+
+TRAIN_BATCH = """
+defaults:
+  train:
+    project: [sess_a/train, sess_b]
+    base_config: sess_b
+    overrides: {training: {max_epochs: 300, ckpt_every_n_epochs: 50}, model: {losses_to_use: []}}
+runs:
+  - name: exp_all
+    task: train
+    csv_file: train_all.csv
+  - name: exp_ctx
+    task: train
+    csv_file: train_all.csv
+    overrides: {model: {model_type: heatmap_mhcrnn}}
+  - name: exp_eval
+    task: predict
+    model: sess_c
+    checkpoint: last
+    labeled_frames: [sess_a/test/t1.csv, sess_a/test/t2.csv]
+"""
+
+
+def test_batch_defaults_names_and_capture():
+    configs, names = launch.read_batch(TRAIN_BATCH)
+    assert names == ["exp_all", "exp_ctx", "exp_eval"]
+    ctx = configs[1].overrides
+    assert ctx["model"] == {"losses_to_use": [], "model_type": "heatmap_mhcrnn"}
+    assert ctx["training"]["ckpt_every_n_epochs"] == 50
+    assert configs[2].checkpoint == "last"
+    client = SimpleNamespace(data_assets=FakeAssets())
+    records = launch.plan(client, configs, names, capture_names=False)
+    assert [r.get("capture") for r in records] == ["models", "models", None]
+    assert [r.get("capture_name") for r in records] == ["exp_all", "exp_ctx", None]
+    assert [a["name"] for a in records[2]["assets"]] == ["sess_c", "sess_a"]
+    with pytest.raises(ValueError, match="repeat"):
+        launch.read_batch(TRAIN_BATCH.replace("exp_ctx", "exp_all"))
+
+
+def test_run_without_results_is_queued_again(tmp_path):
+    comp = SimpleNamespace(
+        id="c1",
+        state=launch.ComputationState.Failed,
+        end_status=launch.ComputationEndStatus.Failed,
+        exit_code=None,
+        has_results=False,
+    )
+    client = SimpleNamespace(computations=SimpleNamespace(get_computation=lambda _: comp))
+    record = {"label": "r", "status": "running", "computation_id": "c1"}
+    launch.advance(client, record, tmp_path, None)
+    assert record["status"] == "queued" and record["attempts"] == 2
+    record.update(status="running", attempts=launch.MAX_ATTEMPTS)
+    launch.advance(client, record, tmp_path, None)
+    assert record["status"] == "failed"

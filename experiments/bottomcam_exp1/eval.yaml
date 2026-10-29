@@ -1,0 +1,31 @@
+# Score every model on the four test sets, at LP's best and the last checkpoint.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp1/eval.yaml \
+#       --out runs/exp1/eval --max-concurrent 6
+# Baselines: Pylon2Test2 (one checkpoint) and r01b (best = epoch 4 only; it
+# trained on the ephys OOD mice' round-1 frames, so its ephys OOD is not OOD).
+defaults:
+  predict:
+    labeled_frames:
+      - bottomcam_exp1/bottomcam_exp1/test/test_ephys_id.csv
+      - bottomcam_exp1/bottomcam_exp1/test/test_ephys_ood.csv
+      - bottomcam_exp1/bottomcam_exp1/test/test_fip_id.csv
+      - bottomcam_exp1/bottomcam_exp1/test/test_fip_ood.csv
+runs:
+  - {name: eval_pylon2test2, model: ephys_BottomCamera_Pylon2Test2}
+  - {name: eval_pylon2test2_r01b, model: pylon2test2_r01b}
+  - {name: eval_exp1_all_last, model: exp1_all, checkpoint: last}
+  - {name: eval_exp1_all_best, model: exp1_all, checkpoint: best}
+  - {name: eval_exp1_ephys_last, model: exp1_ephys, checkpoint: last}
+  - {name: eval_exp1_ephys_best, model: exp1_ephys, checkpoint: best}
+  - {name: eval_exp1_fip_last, model: exp1_fip, checkpoint: last}
+  - {name: eval_exp1_fip_best, model: exp1_fip, checkpoint: best}
+  - {name: eval_exp1_all_ctx_last, model: exp1_all_ctx, checkpoint: last}
+  - {name: eval_exp1_all_ctx_best, model: exp1_all_ctx, checkpoint: best}
+  - {name: eval_exp1_all_semi_last, model: exp1_all_semi, checkpoint: last}
+  - {name: eval_exp1_all_semi_best, model: exp1_all_semi, checkpoint: best}
+  - {name: eval_exp1_all_ft_last, model: exp1_all_ft, checkpoint: last}
+  - {name: eval_exp1_all_ft_best, model: exp1_all_ft, checkpoint: best}
+  - {name: eval_exp1_ephys_ft_last, model: exp1_ephys_ft, checkpoint: last}
+  - {name: eval_exp1_ephys_ft_best, model: exp1_ephys_ft, checkpoint: best}
+  - {name: eval_exp1_all_seed1_last, model: exp1_all_seed1, checkpoint: last}
+  - {name: eval_exp1_all_seed1_best, model: exp1_all_seed1, checkpoint: best}

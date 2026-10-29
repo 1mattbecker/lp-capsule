@@ -12,12 +12,18 @@ Fine-tuning sets LP's ``model.checkpoint``, which LP loads with
 skipped without a word. So the init checkpoint is first loaded strictly in its
 own architecture, its head renamed, checked against the new config, and saved
 as a temporary checkpoint whose every key LP's model has.
+
+Context models read each labeled frame's neighbours t-2..t+2 from its folder.
+Projects labeled from clips (DLC's ``labeled-data/<clip>/imgNNN.png`` for
+``videos/<clip>.mp4``) often lack them; ``context_frames_from_videos`` writes
+them from the clips (:func:`add_context`).
 """
 
 from __future__ import annotations
 
 import csv
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +48,9 @@ ARCHITECTURE = (
     "data.downsample_factor",
 )
 PIXEL_ERRORS = "predictions_pixel_error.csv"
+# Mean |difference| (0-255) allowed between a labeled PNG and the same frame
+# decoded from its clip: ffmpeg's and OpenCV's YUV->RGB differ by <= 3 on a few pixels.
+CONTEXT_MAX_MEAN_DIFF = 0.5
 
 
 def base_config_path(config: TrainConfig, data_dir: Path) -> tuple[Path, list[str] | None]:
@@ -99,15 +108,18 @@ def init_checkpoint(cfg: Any, asset: Path, names: list[str], work: Path) -> dict
     }
 
 
-def assemble_project(data_dir: Path, projects: tuple[str, ...], csv_file: str, work: Path) -> Path:
+def assemble_project(
+    data_dir: Path, projects: tuple[str, ...], csv_file: str, work: Path, link: bool = False
+) -> Path:
     """Return one LP data_dir for the project assets.
 
-    A single asset is used as mounted. Several are merged into ``work/project`` by
-    symlinks: every ``labeled-data/<folder>`` and ``videos/<file>`` of each, and
-    ``csv_file`` from the first asset that has it. A name in two assets is an error.
+    A single asset is used as mounted, unless ``link``. Several are merged into
+    ``work/project`` by symlinks: every ``labeled-data/<folder>`` and
+    ``videos/<file>`` of each, and ``csv_file`` from the first asset that has it.
+    A name in two assets is an error.
     """
     roots = [data_dir / p for p in projects]
-    if len(roots) == 1:
+    if len(roots) == 1 and not link:
         return roots[0]
     merged = work / "project"
     for sub in ("labeled-data", "videos"):
@@ -127,8 +139,7 @@ def assemble_project(data_dir: Path, projects: tuple[str, ...], csv_file: str, w
 
 def check_label_paths(project: Path, labels: Path) -> int:
     """Return the number of labeled frames, failing if any image is missing."""
-    with labels.open(newline="") as f:
-        paths = [row[0] for i, row in enumerate(csv.reader(f)) if i >= 3 and row]
+    paths = label_images(labels)
     missing = [p for p in paths if not (project / p).is_file()]
     if missing:
         raise FileNotFoundError(
@@ -138,15 +149,92 @@ def check_label_paths(project: Path, labels: Path) -> int:
     return len(paths)
 
 
+def label_images(labels: Path) -> list[str]:
+    """Return the image paths of an LP labels CSV."""
+    with labels.open(newline="") as f:
+        return [row[0] for i, row in enumerate(csv.reader(f)) if i >= 3 and row]
+
+
+def _image_diff(a: Path, b: Path) -> float:
+    import numpy as np
+    from PIL import Image
+
+    x, y = (np.asarray(Image.open(p).convert("RGB"), dtype=np.int16) for p in (a, b))
+    return float(np.abs(x - y).mean()) if x.shape == y.shape else float("inf")
+
+
+def add_context(project: Path, labels: Path, work: Path) -> dict[str, Any]:
+    """Write missing neighbours of the labeled PNGs in folders cut from a clip.
+
+    ``project`` is a symlinked merge (:func:`assemble_project`). A folder
+    ``labeled-data/<f>`` with ``videos/<f>.mp4`` becomes a real folder of links
+    plus the new PNGs (``video_clips.add_context_frames``, frame = the PNG's
+    digits). First each folder's first labeled frame is decoded from the clip and
+    compared with the labeled PNG, so a clip that is not the folder's source
+    fails the run instead of training on wrong neighbours.
+    """
+    from aind_dynamic_foraging_behavior_video_analysis.video_clips import add_context_frames
+
+    by_folder: dict[str, list[str]] = {}
+    for image in label_images(labels):
+        parts = image.split("/")
+        if len(parts) == 3 and parts[2].endswith(".png"):
+            by_folder.setdefault(parts[1], []).append(image)
+    folders = {
+        f: imgs for f, imgs in by_folder.items() if (project / "videos" / f"{f}.mp4").is_file()
+    }
+    stage = work / "context"
+
+    def one(folder: str) -> tuple[float, int]:
+        root = stage / folder
+        clip_dir = project / "videos"
+        # The first labeled frame, decoded from the clip, against the labeled PNG.
+        check = root / "check"
+        (check / folder).mkdir(parents=True)
+        (check / "CollectedData.csv").write_text(folders[folder][0] + "\n")
+        add_context_frames(check, clip_dir, offsets=(0,))
+        name = folders[folder][0].split("/")[-1]
+        diff = _image_diff(check / folder / name, project / folders[folder][0])
+        if diff > CONTEXT_MAX_MEAN_DIFF:
+            raise ValueError(
+                f"{folder}/{name} differs from frame {name} of videos/{folder}.mp4 "
+                f"(mean |diff| {diff:.2f}): not the folder's clip?"
+            )
+        # The folder as links, then its missing neighbours.
+        dest = root / "labeled" / folder
+        dest.mkdir(parents=True)
+        for entry in (project / "labeled-data" / folder).iterdir():
+            (dest / entry.name).symlink_to(entry.resolve())
+        (root / "labeled" / "CollectedData.csv").write_text("\n".join(folders[folder]) + "\n")
+        written = add_context_frames(root / "labeled", clip_dir)
+        return diff, len(written)
+
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+        results = dict(zip(folders, pool.map(one, folders)))
+    for folder in folders:
+        link = project / "labeled-data" / folder
+        link.unlink()
+        link.symlink_to(stage / folder / "labeled" / folder)
+    return {
+        "folders": len(folders),
+        "frames": sum(len(v) for v in folders.values()),
+        "written": sum(n for _, n in results.values()),
+        "max_center_mean_abs_diff": max((d for d, _ in results.values()), default=None),
+    }
+
+
 def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dict[str, Any]]:
     """Return the LP training config and facts for the run record."""
     from omegaconf import OmegaConf, open_dict
 
-    project = assemble_project(data_dir, config.project, config.csv_file, work)
+    project = assemble_project(
+        data_dir, config.project, config.csv_file, work, link=config.context_frames_from_videos
+    )
     labels = project / config.csv_file
     if not labels.is_file():
         raise FileNotFoundError(f"no labels CSV {labels}")
     n_labeled = check_label_paths(project, labels)
+    context = add_context(project, labels, work) if config.context_frames_from_videos else None
     names = csv_keypoint_names(labels)
     base, base_names = base_config_path(config, data_dir)
     if base_names is not None and base_names != names:
@@ -186,6 +274,7 @@ def build_cfg(config: TrainConfig, data_dir: Path, work: Path) -> tuple[Any, dic
         "n_labeled_frames": n_labeled,
         "keypoint_names": names,
         "base_config": str(base.relative_to(data_dir)),
+        **({"context_frames": context} if context is not None else {}),
     }
     if config.init_checkpoint:
         info["init"] = init_checkpoint(cfg, data_dir / config.init_checkpoint, names, work)
@@ -245,6 +334,9 @@ def run_train(
             "config": str(bundle.config.relative_to(results_dir)),
             "checkpoint": str(bundle.checkpoint.relative_to(results_dir)),
             "checkpoint_sha256": file_sha256(bundle.checkpoint),
+            # Every checkpoint kept (training.ckpt_every_n_epochs adds epoch=<n> ones);
+            # predict's checkpoint: best | last | <name> picks among them.
+            "checkpoints": sorted(p.name for p in model_dir.rglob("*.ckpt")),
         },
         pixel_error_px_original_frame=(
             summary.to_dict(orient="records") if summary is not None else None

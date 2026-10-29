@@ -7,7 +7,9 @@ A model bundle is any folder holding:
   Identical copies are fine; different ones are an error.
 - **one checkpoint**: ``*.ckpt`` anywhere. Identical copies are fine
   (Pylon2 bundles hold the same file at the top and under ``outputs/tb_logs``);
-  otherwise the one ``*-best.ckpt``.
+  otherwise the one ``*-best.ckpt``. A trained bundle may also hold LP's
+  every-n-epochs checkpoints (``epoch=<n>-step=<s>.ckpt``); ``"last"`` picks the
+  highest epoch, ``"best"`` the ``*-best.ckpt``, a file name that file.
 - **keypoint names**: ``data.keypoint_names`` in the config, else the
   ``bodyparts`` row of a ``CollectedData*.csv`` beside it (our LP 1.6 models
   leave the names null), else ``data.keypoints``.
@@ -20,6 +22,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import os
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +34,7 @@ SKIP_CONFIGS = {"hparams.yaml", "run_config.yaml"}
 # Folders that hold data, not model files; pruned from every search.
 SKIP_DIRS = {"labeled-data", "videos", "image_preds", "video_preds", "labeled_videos"}
 LABELS_GLOB = "CollectedData*.csv"
+EPOCH = re.compile(r"epoch=(\d+)")
 
 
 @dataclass(frozen=True)
@@ -95,22 +99,45 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def find_checkpoint(root: Path) -> Path:
-    """Return the bundle's checkpoint (see the module docstring)."""
-    checkpoints = list(walk_files(root, (".ckpt",)))
+def _one(root: Path, checkpoints: list[Path], what: str) -> Path:
+    """Return the one checkpoint, or the shallowest of identical copies."""
     if not checkpoints:
-        raise FileNotFoundError(f"no .ckpt under {root}")
+        raise FileNotFoundError(f"no {what} checkpoint under {root}")
     if len(checkpoints) == 1:
         return checkpoints[0]
     # Sizes first: hashing reads every file, which is slow on a mounted bucket.
     same_size = len({p.stat().st_size for p in checkpoints}) == 1
     if same_size and len({file_sha256(p) for p in checkpoints}) == 1:
         return min(checkpoints, key=lambda p: len(p.relative_to(root).parts))
-    best = [p for p in checkpoints if p.name.endswith("-best.ckpt")]
-    if len(best) == 1:
-        return best[0]
     listed = ", ".join(str(p.relative_to(root)) for p in checkpoints)
-    raise ValueError(f"several different checkpoints under {root}: {listed}")
+    what = f"{what} " if what else ""
+    raise ValueError(f"several different {what}checkpoints under {root}: {listed}")
+
+
+def find_checkpoint(root: Path, which: str = "auto") -> Path:
+    """Return the bundle's checkpoint (see the module docstring)."""
+    checkpoints = list(walk_files(root, (".ckpt",)))
+    if not checkpoints:
+        raise FileNotFoundError(f"no .ckpt under {root}")
+    best = [p for p in checkpoints if p.name.endswith("-best.ckpt")]
+    if which == "best":
+        return _one(root, best, "*-best.ckpt")
+    if which == "last":
+        epochs = {p: int(m[1]) for p in checkpoints if (m := EPOCH.search(p.name))}
+        if not epochs:
+            raise FileNotFoundError(f"no checkpoint named epoch=<n> under {root}")
+        top = max(epochs.values())
+        last = [p for p, e in epochs.items() if e == top]
+        # The best and an every-n checkpoint of the same epoch hold the same weights.
+        return _one(root, [p for p in last if p not in best] or last, f"epoch={top}")
+    if which != "auto":
+        return _one(root, [p for p in checkpoints if p.name == which], which)
+    try:
+        return _one(root, checkpoints, "")
+    except ValueError:
+        if len(best) == 1:
+            return best[0]
+        raise
 
 
 def csv_keypoint_names(path: Path) -> list[str]:
@@ -151,8 +178,8 @@ def keypoint_names(config: dict[str, Any], root: Path) -> tuple[list[str], str]:
     return names, source
 
 
-def find_bundle(root: Path) -> Bundle:
-    """Find a model bundle's files and keypoint names."""
+def find_bundle(root: Path, checkpoint: str = "auto") -> Bundle:
+    """Find a model bundle's files and keypoint names (``checkpoint``: see find_checkpoint)."""
     config = find_config(root)
     raw = read_lp_config(config)
     assert raw is not None
@@ -160,7 +187,7 @@ def find_bundle(root: Path) -> Bundle:
     return Bundle(
         root=root,
         config=config,
-        checkpoint=find_checkpoint(root),
+        checkpoint=find_checkpoint(root, checkpoint),
         keypoint_names=tuple(names),
         keypoint_source=source,
     )

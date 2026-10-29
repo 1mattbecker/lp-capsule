@@ -14,6 +14,14 @@ run as an external result asset in scratch S3.
 ``train`` takes a train config, runs it, and always captures the result, so
 the trained model is a data asset ``predict`` can name.
 
+``batch`` takes a YAML of named runs, train or predict, each a run config plus
+``name`` (and ``defaults`` merged under every run), and keeps at most
+``--max-concurrent`` of them active. Train runs are captured as model assets
+named ``name``; predict runs are not captured.
+
+A run that fails without any results (Code Ocean's "Selected Machine
+Unavailable") is queued again, up to ``MAX_ATTEMPTS`` launches.
+
 A run counts as done only when Code Ocean says it succeeded, its exit code is
 0, and its ``run.json`` says ``status: ok``. ``<out>/manifest.json`` is
 rewritten every pass; launching again with the same ``--out`` skips finished
@@ -21,6 +29,8 @@ runs and follows the ones still running.
 
     uv run scripts/launch.py predict examples/predict_batch.yaml --out runs/r01 --dry-run
     uv run scripts/launch.py train examples/train.yaml --name pylon2test2_ft_r01
+    uv run scripts/launch.py batch experiments/bottomcam_exp1/train.yaml --out runs/exp1 \
+        --max-concurrent 4
 
 The token is ``API_SECRET``, else the macOS Keychain item ``codeocean-api``.
 """
@@ -85,6 +95,8 @@ DEFAULT_MAX_CONCURRENT = 10
 POLL_SECONDS = 60
 # Consecutive API errors on one run before giving up on it.
 MAX_ERRORS = 10
+# Launches of one run that ended without results (no machine) before giving up.
+MAX_ATTEMPTS = 6
 ACTIVE_STATES = {
     ComputationState.Initializing,
     ComputationState.Running,
@@ -152,7 +164,13 @@ def resolve_config(
             config,
             model=asset(config.model).name,
             videos=tuple(replace(v, asset=asset(v.asset).name) for v in config.videos),
-            labeled_frames=in_asset(labeled) if isinstance(labeled, str) else labeled,
+            labeled_frames=(
+                in_asset(labeled)
+                if isinstance(labeled, str)
+                else tuple(map(in_asset, labeled))
+                if isinstance(labeled, tuple)
+                else labeled
+            ),
         )
     else:
         resolved = replace(
@@ -268,11 +286,17 @@ def advance(client: CodeOcean, record: dict[str, Any], out: Path, capture: str |
             and comp.exit_code in (0, None)
             and run.get("status") == "ok"
         )
+        if not ok and not run and record.get("attempts", 1) < MAX_ATTEMPTS:
+            # No results at all: the worker never ran (usually no machine free).
+            record.update(status="queued", attempts=record.get("attempts", 1) + 1)
+            print(f"  ↻ {label}: ended without results, queued again", flush=True)
+            return
         if not ok:
             end = comp.end_status.value if comp.end_status else "unknown"
             record.update(status="failed", error=run.get("error") or f"end_status {end}")
             print(f"  ✗ {label}: {record['error']}", flush=True)
             return
+        capture = record.get("capture", capture)
         if capture is None:
             record["status"] = "completed"
             print(f"  ✓ {label}: results in {out / label}", flush=True)
@@ -325,6 +349,8 @@ def run_queue(
                     record["_errors"] = 0
                 except Exception as e:  # noqa: BLE001 -- retried next pass
                     note_error(record, e, "error")
+                if record["status"] == "queued":
+                    queue.append(record)
         if queue:
             try:
                 runs = client.capsules.list_computations(capsule_id)
@@ -356,24 +382,71 @@ def run_queue(
 
 
 def plan(
-    client: CodeOcean, configs: list[RunConfig], names: list[str | None]
+    client: CodeOcean,
+    configs: list[RunConfig],
+    names: list[str | None],
+    capture_names: bool = True,
 ) -> list[dict[str, Any]]:
-    """Resolve every run's assets; return new manifest records."""
+    """Resolve every run's assets; return new manifest records.
+
+    A named run's capture is named after it; with ``capture_names`` False (a
+    batch) only train runs are captured, as models.
+    """
     cache: dict[str, DataAsset] = {}
     records = []
     for config, name in zip(configs, names):
         resolved, assets = resolve_config(client, config, cache)
-        records.append(
-            {
-                "label": run_label(resolved, name),
-                "status": "queued",
-                "config": dump(resolved),
-                "assets": [{"id": a.id, "name": a.name} for a in assets],
-                "computation_id": None,
-                **({"capture_name": name} if name else {}),
-            }
-        )
+        record: dict[str, Any] = {
+            "label": run_label(resolved, name),
+            "status": "queued",
+            "config": dump(resolved),
+            "assets": [{"id": a.id, "name": a.name} for a in assets],
+            "computation_id": None,
+        }
+        if name and (capture_names or isinstance(config, TrainConfig)):
+            record["capture_name"] = name
+        if not capture_names:
+            record["capture"] = "models" if isinstance(config, TrainConfig) else None
+        records.append(record)
     return records
+
+
+def deep_merge(base: dict[str, Any], top: dict[str, Any]) -> dict[str, Any]:
+    """Return ``base`` with ``top`` merged in; nested mappings merge, the rest replace."""
+    out = dict(base)
+    for key, value in top.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def read_batch(text: str) -> tuple[list[RunConfig], list[str]]:
+    """Parse a batch: ``runs`` (each a config plus ``name``) over ``defaults``.
+
+    ``defaults`` maps a task (``train``, ``predict``) to keys merged under each
+    run of that task. A run without ``task`` takes the one task in ``defaults``.
+    """
+    raw = load_config_text(text)
+    unknown = set(raw) - {"defaults", "runs"}
+    if unknown or not isinstance(raw.get("runs"), list) or not raw["runs"]:
+        raise ValueError("a batch is a mapping with a non-empty runs list (and defaults)")
+    defaults = raw.get("defaults") or {}
+    if not isinstance(defaults, dict) or set(defaults) - {"train", "predict"}:
+        raise ValueError("defaults maps train and/or predict to their default keys")
+    configs, names = [], []
+    for i, run in enumerate(raw["runs"]):
+        if not isinstance(run, dict) or not isinstance(run.get("name"), str):
+            raise ValueError(f"runs[{i}] must be a mapping with a name")
+        run = dict(run)
+        names.append(run.pop("name"))
+        task = run.setdefault("task", next(iter(defaults)) if len(defaults) == 1 else None)
+        configs.append(parse_config(deep_merge(defaults.get(task) or {}, run)))
+    repeated = sorted({n for n in names if names.count(n) > 1})
+    if repeated:
+        raise ValueError(f"run names repeat: {repeated}")
+    return configs, names
 
 
 def merge_manifest(out: Path, records: list[dict[str, Any]], retry: bool) -> list[dict[str, Any]]:
@@ -412,23 +485,39 @@ def main() -> None:
     t.add_argument("config", type=Path)
     t.add_argument("--name", required=True, help="name of the model data asset")
     t.add_argument("--out", type=Path, help="local folder (default runs/train/<name>)")
-    for s in (p, t):
+    b = sub.add_parser("batch", help="named train and predict runs from one YAML")
+    b.add_argument("config", type=Path)
+    b.add_argument("--out", type=Path, required=True, help="local folder for results")
+    b.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT)
+    for s in (p, t, b):
         s.add_argument("--capsule-id", default=CAPSULE_ID)
         s.add_argument("--dry-run", action="store_true", help="resolve and print only")
         s.add_argument("--retry-failed", action="store_true", help="relaunch failed runs")
     args = parser.parse_args()
 
-    config = parse_config(load_config_text(args.config.read_text()))
-    if args.command == "predict":
+    configs: list[RunConfig]
+    names: list[str | None]
+    if args.command == "batch":
+        try:
+            configs, batch_names = read_batch(args.config.read_text())
+        except ValueError as e:
+            parser.error(str(e))
+        if args.max_concurrent < 1:
+            parser.error("--max-concurrent must be at least 1")
+        names = list(batch_names)
+        out, max_concurrent, capture = args.out, args.max_concurrent, None
+    elif args.command == "predict":
+        config = parse_config(load_config_text(args.config.read_text()))
         if not isinstance(config, PredictConfig):
             parser.error(f"{args.config} is not a predict config")
         if args.sessions_per_run < 1 or args.max_concurrent < 1:
             parser.error("--sessions-per-run and --max-concurrent must be at least 1")
-        configs: list[RunConfig] = list(split_predict(config, args.sessions_per_run))
-        names: list[str | None] = [None] * len(configs)
+        configs = list(split_predict(config, args.sessions_per_run))
+        names = [None] * len(configs)
         out, max_concurrent = args.out, args.max_concurrent
         capture = "predictions" if args.capture else None
     else:
+        config = parse_config(load_config_text(args.config.read_text()))
         if not isinstance(config, TrainConfig):
             parser.error(f"{args.config} is not a train config")
         configs, names = [config], [args.name]
@@ -439,7 +528,8 @@ def main() -> None:
 
     client = make_client()
     try:
-        manifest = merge_manifest(out, plan(client, configs, names), args.retry_failed)
+        records = plan(client, configs, names, capture_names=args.command != "batch")
+        manifest = merge_manifest(out, records, args.retry_failed)
     except (LookupError, ValueError) as e:
         parser.exit(1, f"error: {e}\n")
     if args.dry_run:
@@ -451,12 +541,17 @@ def main() -> None:
     for record in manifest:
         if record["status"] not in ("queued", *IN_FLIGHT):
             print(f"  = {record['label']}: {record['status']}, skipped")
-    if args.command == "train" and manifest[0]["status"] == "queued":
-        # Predict configs name models by asset name, so it must stay unique.
-        taken = assets_named(client, args.name)
-        if taken:
-            ids = ", ".join(a.id for a in taken)
-            parser.error(f"a data asset named {args.name} exists ({ids})")
+    for record in manifest:
+        if (
+            record["status"] == "queued"
+            and record.get("capture_name")
+            and (args.command == "train" or record.get("capture") == "models")
+        ):
+            # Predict configs name models by asset name, so it must stay unique.
+            taken = assets_named(client, record["capture_name"])
+            if taken:
+                ids = ", ".join(a.id for a in taken)
+                parser.error(f"a data asset named {record['capture_name']} exists ({ids})")
     run_queue(client, args.capsule_id, manifest, out, max_concurrent, capture)
     done = sum(1 for r in manifest if r["status"] == "completed")
     print(f"\n{done}/{len(manifest)} completed; manifest in {out / 'manifest.json'}")

@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "omegaconf>=2.3",
     "pandas>=2.2",
+    "pillow",
     "pyyaml>=6",
 ]
 

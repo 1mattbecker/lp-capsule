@@ -44,6 +44,29 @@ def test_different_checkpoints_prefer_best(tmp_path):
         find_checkpoint(tmp_path)
 
 
+def test_choose_best_last_or_named(tmp_path):
+    """A trained bundle: LP's best plus its every-n-epochs checkpoints."""
+    ckpts = tmp_path / "model/tb_logs/test/version_0/checkpoints"
+    best = write(ckpts / "epoch=4-step=450-best.ckpt", b"best")
+    write(ckpts / "epoch=49-step=4500.ckpt", b"e49")
+    last = write(ckpts / "epoch=99-step=9000.ckpt", b"e99!")
+    assert find_checkpoint(tmp_path) == best
+    assert find_checkpoint(tmp_path, "best") == best
+    assert find_checkpoint(tmp_path, "last") == last
+    assert find_checkpoint(tmp_path, "epoch=49-step=4500.ckpt").name == "epoch=49-step=4500.ckpt"
+    with pytest.raises(FileNotFoundError, match="no epoch=1.ckpt"):
+        find_checkpoint(tmp_path, "epoch=1.ckpt")
+
+
+def test_last_prefers_every_n_copy_and_falls_back_to_best(tmp_path):
+    best = write(tmp_path / "epoch=209-step=17220-best.ckpt", b"w")
+    assert find_checkpoint(tmp_path, "last") == best
+    copy = write(tmp_path / "epoch=209-step=17220.ckpt", b"w")
+    assert find_checkpoint(tmp_path, "last") == copy
+    write(tmp_path / "model.ckpt", b"x")
+    assert find_checkpoint(tmp_path, "last") == copy
+
+
 def test_same_size_different_content(tmp_path):
     write(tmp_path / "a.ckpt", b"aaaa")
     write(tmp_path / "b.ckpt", b"bbbb")

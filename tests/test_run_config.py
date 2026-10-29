@@ -122,3 +122,37 @@ def test_project_folder_inside_asset():
     assert train.project == ("labels/round1", "old") and assets_of(train) == ["labels", "old"]
     with pytest.raises(ValueError, match="project"):
         parse_config({"task": "train", "project": "../x", "base_config": "old"})
+
+
+def test_labeled_frames_list_and_checkpoint():
+    predict = parse_config(
+        {
+            "task": "predict",
+            "model": "m",
+            "checkpoint": "last",
+            "labeled_frames": ["exp/test/test_a.csv", "exp/test/test_b.csv", "other/c.csv"],
+        }
+    )
+    assert predict.labeled_frames == ("exp/test/test_a.csv", "exp/test/test_b.csv", "other/c.csv")
+    assert predict.checkpoint == "last"
+    assert assets_of(predict) == ["m", "exp", "other"]
+    assert parse_config(load_config_text(dump(predict))) == predict
+    named = parse_config({"task": "predict", "model": "m", "labeled_frames": True,
+                          "checkpoint": "epoch=99-step=9000.ckpt"})  # fmt: skip
+    assert named.checkpoint == "epoch=99-step=9000.ckpt"
+    assert "checkpoint" not in dump(parse_config({"task": "predict", "model": "m",
+                                                  "labeled_frames": True}))  # fmt: skip
+    for bad in ({"checkpoint": "latest"}, {"checkpoint": "a/b.ckpt"},
+                {"labeled_frames": []}, {"labeled_frames": ["a/x.csv", "b/x.csv"]},
+                {"labeled_frames": ["a/x.csv", 3]}):  # fmt: skip
+        with pytest.raises(ValueError):
+            parse_config({"task": "predict", "model": "m", "labeled_frames": True, **bad})
+
+
+def test_context_frames_from_videos():
+    train = parse_config({"task": "train", "project": "p", "base_config": "m",
+                          "context_frames_from_videos": True})  # fmt: skip
+    assert train.context_frames_from_videos
+    assert parse_config(load_config_text(dump(train))) == train
+    assert "context_frames" not in dump(parse_config(
+        {"task": "train", "project": "p", "base_config": "m"}))  # fmt: skip

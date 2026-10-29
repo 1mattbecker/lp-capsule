@@ -1,0 +1,22 @@
+# 5-epoch runs of train.yaml's three distinct setups, to check memory, data
+# merging, context frames and the eval path before the full batch.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp1/smoke.yaml \
+#       --out runs/exp1/smoke --max-concurrent 3
+defaults:
+  train:
+    project:
+      - bottomcam_exp1/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - ephys_BottomCamera_Pylon2Test2
+    base_config: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      model: {losses_to_use: []}
+      training: {max_epochs: 5, min_epochs: 5, ckpt_every_n_epochs: 5, unfreezing_epoch: 2}
+runs:
+  - name: exp1_smoke_all
+  - name: exp1_smoke_ctx
+    context_frames_from_videos: true
+    overrides: {model: {model_type: heatmap_mhcrnn}}
+  - name: exp1_smoke_semi
+    overrides: {model: {losses_to_use: [pca_singleview, temporal]}}

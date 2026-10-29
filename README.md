@@ -32,6 +32,9 @@ model: ephys_BottomCamera_Pylon2Test2   # mount name under /data
 reader: dali                            # or opencv (about 0.5 px different; keep one fixed)
 precision: fp16                         # or fp32
 batch_size: 0                           # 0 = the model config's
+checkpoint: auto                        # or best, last (highest epoch), or a .ckpt name
+labeled_frames: [labels/test/a.csv]     # optional: score labeled frames (true = its own
+                                        # training labels; a list = each scored apart)
 videos:
   - asset: behavior_782394_2025-04-23_10-51-14
     camera: BottomCamera                # or path: <relative to the asset>
@@ -43,8 +46,10 @@ task: train
 project: pylon2test2_r01                # CollectedData.csv, labeled-data/, videos/
 base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>.yaml
 init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune
-overrides: {training: {max_epochs: 100, min_epochs: 100}}
+overrides: {training: {max_epochs: 100, min_epochs: 100, ckpt_every_n_epochs: 25}}
 predict_videos: false
+context_frames_from_videos: false       # context models: write t-2..t+2 of labeled PNGs
+                                        # from videos/<folder>.mp4 where missing
 ```
 
 The `config` field takes YAML text, or a path to a YAML file (absolute, or
@@ -62,9 +67,14 @@ names is mounted, so runs started by hand in the UI fail early and clearly.
   bodyparts / coords header). Its index is the **source frame**, and it holds
   only the window rows.
 - train: `model/`, a bundle predict reads as is (`config.yaml` with
-  `keypoint_names` written in, the best checkpoint under `tb_logs/`, and LP's
-  labeled-frame predictions), plus `pixel_error_summary.csv`. Pixel error is
-  per set and keypoint, in pixels of the original labeled frames.
+  `keypoint_names` written in, the best checkpoint under `tb_logs/` plus any
+  `training.ckpt_every_n_epochs` ones, and LP's labeled-frame predictions,
+  from the best), plus `pixel_error_summary.csv`. Pixel error is per set and
+  keypoint, in pixels of the original labeled frames. LP picks "best" by
+  validation heatmap loss, which can stop at an early epoch while pixel error
+  keeps improving; save every-n-epochs checkpoints and score `last` too.
+- predict with `labeled_frames`: `labeled_frames/pixel_error_summary.csv` and
+  LP's predictions; with a list, each file is prefixed `<csv stem>.`.
 
 ## Model bundles
 
@@ -78,8 +88,8 @@ Models are loaded as in
 [lightning-pose-inference-capsule](https://github.com/AllenNeuralDynamics/lightning-pose-inference-capsule):
 the module is built from the checkpoint's hyperparameters, with no labeled data and
 no backbone download. LP 1.6 `upsampling_layers.*` keys are renamed to
-`head.upsampling_layers.*`, and the weights are loaded strictly. Only heatmap
-models are supported.
+`head.upsampling_layers.*`, and the weights are loaded strictly. Video predict
+supports heatmap models only; context models can score labeled frames.
 
 Fine-tuning goes through LP's `model.checkpoint`, which LP loads with
 `strict=False`, so a mismatched checkpoint would be dropped without any error.
@@ -93,6 +103,8 @@ config, and only then hands LP a re-saved copy.
 uv run scripts/launch.py predict examples/predict_batch.yaml --out runs/r01 --dry-run
 uv run scripts/launch.py predict examples/predict_batch.yaml --out runs/r01 --max-concurrent 10
 uv run scripts/launch.py train examples/train.yaml --name pylon2test2_ft_r01
+uv run scripts/launch.py batch experiments/bottomcam_exp1/train.yaml --out runs/exp1/train \
+    --max-concurrent 4
 ```
 
 - The token comes from `API_SECRET`, or else from the Keychain item `codeocean-api`.
@@ -105,6 +117,11 @@ uv run scripts/launch.py train examples/train.yaml --name pylon2test2_ft_r01
   `s3://aind-scratch-data/matt.becker/lp/predictions/`. `train` always captures,
   to `.../lp/models/<name>/`, so the new model can be named in predict configs.
   The launcher refuses a `--name` that is already taken.
+- `batch` runs named train and predict configs from one YAML (`defaults` per
+  task, merged under each run), at most `--max-concurrent` at a time. Train
+  runs are captured as models named after the run.
+- A run that ends with no results at all (CO's "Selected Machine Unavailable")
+  is queued again, up to 6 launches.
 
 ## Setting up on Code Ocean
 

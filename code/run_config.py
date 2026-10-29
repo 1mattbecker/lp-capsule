@@ -13,12 +13,13 @@ Predict::
     reader: dali          # or opencv
     precision: fp16       # or fp32
     batch_size: 0         # 0 = the model config's
+    checkpoint: auto      # best, last (highest epoch), or a .ckpt file name
     videos:
       - asset: behavior_782394_2025-04-23_10-51-14
         camera: BottomCamera          # or path: behavior-videos/BottomCamera/video.mp4
         windows: [[120000, 120500]]   # [start, end) source frames; omit = whole video
     labeled_frames: false # true: also score the model on its own labeled frames;
-                          # or <asset>/<labels.csv> to score it on those frames
+                          # or <asset>/<labels.csv> (or a list) to score it on those
 
 Train::
 
@@ -28,6 +29,8 @@ Train::
     base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>.yaml
     init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune from it
     overrides: {training: {max_epochs: 100, min_epochs: 100}}
+    context_frames_from_videos: false   # write t-2..t+2 of labeled frames from
+                                        # videos/<folder>.mp4 where missing
 
 This module imports nothing heavy, so the launcher uses it too.
 """
@@ -43,6 +46,8 @@ import yaml
 
 READERS = ("dali", "opencv")
 PRECISIONS = ("fp32", "fp16")
+# predict's checkpoint choices besides a file name (bundle.find_checkpoint).
+CHECKPOINTS = ("auto", "best", "last")
 
 
 @dataclass(frozen=True)
@@ -76,8 +81,11 @@ class PredictConfig:
     debug: bool = False
     # Also predict labeled frames and report pixel error per keypoint: True for the
     # model's own training labels (with their train/val/test split), or
-    # "<asset>/<labels.csv>" for other labels (see predict.check_labeled_frames).
-    labeled_frames: bool | str = False
+    # "<asset>/<labels.csv>" for other labels, or several of those, each scored
+    # on its own (see predict.check_labeled_frames).
+    labeled_frames: bool | str | tuple[str, ...] = False
+    # "auto" (bundle.find_checkpoint), "best", "last", or a .ckpt file name.
+    checkpoint: str = "auto"
     task: str = "predict"
 
 
@@ -95,6 +103,9 @@ class TrainConfig:
     overrides: dict[str, Any] = field(default_factory=dict)
     # Predict the project's videos/ after training (slow on long videos).
     predict_videos: bool = False
+    # For context models: write the neighbours of labeled frames that lack them,
+    # from the clip each labeled-data folder was cut from (see train.add_context).
+    context_frames_from_videos: bool = False
     task: str = "train"
 
     def __post_init__(self) -> None:
@@ -192,22 +203,62 @@ def parse_video(raw: Any, where: str) -> VideoSpec:
     )
 
 
+def _labels_csv(value: Any) -> str:
+    """Return an ``<asset>/<labels.csv>`` path."""
+    parts = PurePosixPath(value).parts if isinstance(value, str) else ()
+    if value.startswith("/") or len(parts) < 2 or ".." in parts:
+        raise ValueError(
+            f"labeled_frames must be true or <asset>/<labels.csv> (or a list), got {value!r}"
+        )
+    return value
+
+
+def parse_labeled_frames(raw: Any) -> bool | str | tuple[str, ...]:
+    """Parse ``labeled_frames``: a flag, one labels CSV, or a list of them."""
+    if isinstance(raw, str):
+        return _labels_csv(raw)
+    if isinstance(raw, list):
+        if not raw:
+            raise ValueError("labeled_frames: the list is empty")
+        bad = [v for v in raw if not isinstance(v, str)]
+        if bad:
+            raise ValueError(f"labeled_frames: list entries are <asset>/<labels.csv>, got {bad}")
+        csvs = tuple(map(_labels_csv, raw))
+        stems = [PurePosixPath(c).stem for c in csvs]
+        if len(set(stems)) < len(stems):
+            raise ValueError(f"labeled_frames: CSV names must differ, got {stems}")
+        return csvs
+    return _flag(raw, "labeled_frames")
+
+
+def _checkpoint(value: Any) -> str:
+    if value in CHECKPOINTS or (
+        isinstance(value, str) and value.endswith(".ckpt") and "/" not in value
+    ):
+        return str(value)
+    raise ValueError(
+        f"checkpoint must be one of {list(CHECKPOINTS)} or a .ckpt name, got {value!r}"
+    )
+
+
 def parse_predict(raw: dict[str, Any]) -> PredictConfig:
     """Parse a ``task: predict`` config."""
     _check_keys(
         raw,
-        {"task", "model", "videos", "reader", "precision", "batch_size", "debug", "labeled_frames"},
+        {
+            "task",
+            "model",
+            "videos",
+            "reader",
+            "precision",
+            "batch_size",
+            "checkpoint",
+            "debug",
+            "labeled_frames",
+        },
         "predict",
     )
-    labeled_frames = raw.get("labeled_frames", False)
-    if isinstance(labeled_frames, str):
-        parts = PurePosixPath(labeled_frames).parts
-        if labeled_frames.startswith("/") or len(parts) < 2 or ".." in parts:
-            raise ValueError(
-                f"labeled_frames must be true or <asset>/<labels.csv>, got {labeled_frames!r}"
-            )
-    else:
-        labeled_frames = _flag(labeled_frames, "labeled_frames")
+    labeled_frames = parse_labeled_frames(raw.get("labeled_frames", False))
     videos = raw.get("videos", [] if labeled_frames else None)
     if not isinstance(videos, list) or not (videos or labeled_frames):
         raise ValueError("predict: videos must be a non-empty list (or set labeled_frames)")
@@ -227,6 +278,7 @@ def parse_predict(raw: dict[str, Any]) -> PredictConfig:
         batch_size=batch_size,
         debug=_flag(raw.get("debug", False), "debug"),
         labeled_frames=labeled_frames,
+        checkpoint=_checkpoint(raw.get("checkpoint", "auto")),
     )
 
 
@@ -242,6 +294,7 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
             "csv_file",
             "overrides",
             "predict_videos",
+            "context_frames_from_videos",
         },
         "train",
     )
@@ -271,6 +324,9 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
         csv_file=csv_file,
         overrides=overrides,
         predict_videos=predict_videos,
+        context_frames_from_videos=_flag(
+            raw.get("context_frames_from_videos", False), "context_frames_from_videos"
+        ),
     )
 
 
@@ -295,6 +351,8 @@ def assets_of(config: RunConfig) -> list[str]:
         names = [config.model, *(v.asset for v in config.videos)]
         if isinstance(config.labeled_frames, str):
             names.append(base_config_asset(config.labeled_frames))
+        elif isinstance(config.labeled_frames, tuple):
+            names.extend(map(base_config_asset, config.labeled_frames))
     else:
         names = [*map(base_config_asset, config.project), base_config_asset(config.base_config)]
         if config.init_checkpoint:
@@ -311,8 +369,17 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
             "reader": config.reader,
             "precision": config.precision,
             "batch_size": config.batch_size,
+            **({"checkpoint": config.checkpoint} if config.checkpoint != "auto" else {}),
             **({"debug": True} if config.debug else {}),
-            **({"labeled_frames": config.labeled_frames} if config.labeled_frames else {}),
+            **(
+                {
+                    "labeled_frames": list(config.labeled_frames)
+                    if isinstance(config.labeled_frames, tuple)
+                    else config.labeled_frames
+                }
+                if config.labeled_frames
+                else {}
+            ),
             "videos": [
                 {
                     "asset": v.asset,
@@ -331,6 +398,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
         "csv_file": config.csv_file,
         "overrides": config.overrides,
         "predict_videos": config.predict_videos,
+        **({"context_frames_from_videos": True} if config.context_frames_from_videos else {}),
     }
 
 
