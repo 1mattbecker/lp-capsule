@@ -108,6 +108,19 @@ def init_checkpoint(cfg: Any, asset: Path, names: list[str], work: Path) -> dict
     }
 
 
+def listing(root: Path, depth: int = 2, limit: int = 12) -> dict[str, Any] | str:
+    """Return a folder's names, ``depth`` levels down, for error messages."""
+    if not root.is_dir():
+        return "missing"
+    entries = sorted(root.iterdir())
+    return {
+        e.name + ("/" if e.is_dir() else ""): listing(e, depth - 1, limit)
+        if e.is_dir() and depth > 1
+        else ""
+        for e in entries[:limit]
+    }
+
+
 def assemble_project(
     data_dir: Path, projects: tuple[str, ...], csv_file: str, work: Path, link: bool = False
 ) -> Path:
@@ -132,7 +145,7 @@ def assemble_project(
                 link.symlink_to(entry)
     with_csv = [root for root in roots if (root / csv_file).is_file()]
     if not with_csv:
-        found = {p: sorted(x.name for x in r.iterdir())[:20] if r.is_dir() else "missing"
+        found = {p: listing(r if r.is_dir() else data_dir / Path(p).parts[0])
                  for p, r in zip(projects, roots)}  # fmt: skip
         raise FileNotFoundError(f"no project asset has {csv_file}; their contents: {found}")
     (merged / csv_file).symlink_to(with_csv[0] / csv_file)
