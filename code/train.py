@@ -309,6 +309,9 @@ def run_train(
         )
         record.update(debug_batches=stats)
         return
+    from lp_fixes import apply as apply_lp_fixes
+
+    record.update(lp_fixes=apply_lp_fixes())
     model_dir = results_dir / "model"
     gpu = GpuMemory()
     try:
