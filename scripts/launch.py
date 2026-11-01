@@ -450,10 +450,12 @@ def plan(
             "assets": [{"id": a.id, "name": a.name} for a in assets],
             "computation_id": None,
         }
-        if name and (capture_names or isinstance(config, TrainConfig)):
+        # A debug_batches run trains nothing, so it is no model to capture.
+        model = isinstance(config, TrainConfig) and not config.debug_batches
+        if name and (capture_names or model):
             record["capture_name"] = name
         if not capture_names:
-            record["capture"] = "models" if isinstance(config, TrainConfig) else None
+            record["capture"] = "models" if model else None
         records.append(record)
     return records
 

@@ -29,6 +29,7 @@ Train::
     base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>.yaml
     init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune from it
     overrides: {training: {max_epochs: 100, min_epochs: 100}}
+    debug_batches: 0      # N > 0: look at N batches per data source instead of training
 
 This module imports nothing heavy, so the launcher uses it too.
 """
@@ -101,6 +102,9 @@ class TrainConfig:
     overrides: dict[str, Any] = field(default_factory=dict)
     # Predict the project's videos/ after training (slow on long videos).
     predict_videos: bool = False
+    # N > 0: write N batches of each data source and checks on them instead of
+    # training (see debug_batches).
+    debug_batches: int = 0
     task: str = "train"
 
     def __post_init__(self) -> None:
@@ -289,6 +293,7 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
             "csv_file",
             "overrides",
             "predict_videos",
+            "debug_batches",
         },
         "train",
     )
@@ -307,6 +312,9 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
     predict_videos = raw.get("predict_videos", False)
     if not isinstance(predict_videos, bool):
         raise ValueError("predict_videos must be true or false")
+    debug_batches = raw.get("debug_batches", 0)
+    if not isinstance(debug_batches, int) or isinstance(debug_batches, bool) or debug_batches < 0:
+        raise ValueError(f"debug_batches must be an integer >= 0, got {debug_batches!r}")
     project = raw.get("project")
     projects = project if isinstance(project, list) else [project]
     if not projects:
@@ -318,6 +326,7 @@ def parse_train(raw: dict[str, Any]) -> TrainConfig:
         csv_file=csv_file,
         overrides=overrides,
         predict_videos=predict_videos,
+        debug_batches=debug_batches,
     )
 
 
@@ -389,6 +398,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
         "csv_file": config.csv_file,
         "overrides": config.overrides,
         "predict_videos": config.predict_videos,
+        **({"debug_batches": config.debug_batches} if config.debug_batches else {}),
     }
 
 

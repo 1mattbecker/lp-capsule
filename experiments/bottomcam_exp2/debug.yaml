@@ -1,0 +1,20 @@
+# Step 1a of exp2: what do the semi-supervised losses' unlabeled frames look
+# like to LP, next to the labeled frames? No training (debug_batches).
+#   uv run scripts/launch.py batch experiments/bottomcam_exp2/debug.yaml \
+#       --out runs/exp2/debug --max-concurrent 1
+# Same data and recipe as exp1_all_semi (train_video.yaml). Pylon2Test2 as
+# init_checkpoint is only the model the checks run (its labeled error and
+# confidence before and after BatchNorm statistics see each source).
+runs:
+  - name: exp2_debug_batches
+    task: train
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2
+    init_checkpoint: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      model: {losses_to_use: [pca_singleview, temporal]}
+    debug_batches: 20

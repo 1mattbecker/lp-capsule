@@ -301,6 +301,14 @@ def run_train(
     torch.multiprocessing.set_sharing_strategy("file_system")
     cfg, info = build_cfg(config, data_dir, work)
     record.update(train=info)
+    if config.debug_batches:
+        from debug_batches import run_debug_batches
+
+        stats = run_debug_batches(
+            cfg, config.debug_batches, info.get("init"), data_dir, results_dir, work
+        )
+        record.update(debug_batches=stats)
+        return
     model_dir = results_dir / "model"
     gpu = GpuMemory()
     try:

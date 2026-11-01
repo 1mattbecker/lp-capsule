@@ -84,6 +84,18 @@ def test_train_assets_and_round_trip():
     assert parse_config(load_config_text(dump(config))) == config
 
 
+def test_train_debug_batches():
+    raw = {"task": "train", "project": "p", "base_config": "m"}
+    assert parse_config(raw).debug_batches == 0
+    assert "debug_batches" not in dump(parse_config(raw))
+    config = parse_config(raw | {"debug_batches": 20})
+    assert config.debug_batches == 20
+    assert parse_config(load_config_text(dump(config))) == config
+    for bad in (-1, True, "20"):
+        with pytest.raises(ValueError, match="debug_batches"):
+            parse_config(raw | {"debug_batches": bad})
+
+
 def test_task_required():
     with pytest.raises(ValueError, match="task"):
         parse_config({"model": "m"})

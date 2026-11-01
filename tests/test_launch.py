@@ -140,6 +140,18 @@ def test_batch_defaults_names_and_capture():
         launch.read_batch(TRAIN_BATCH.replace("exp_ctx", "exp_all"))
 
 
+def test_batch_debug_run_not_captured():
+    debug = "debug_batches: 20\n    overrides"
+    configs, names = launch.read_batch(
+        TRAIN_BATCH.replace("csv_file: train_all.csv\n    overrides", debug)
+    )
+    assert configs[1].debug_batches == 20
+    client = SimpleNamespace(data_assets=FakeAssets())
+    records = launch.plan(client, configs, names, capture_names=False)
+    assert [r.get("capture") for r in records] == ["models", None, None]
+    assert [r.get("capture_name") for r in records] == ["exp_all", None, None]
+
+
 def test_run_without_results_is_queued_again(tmp_path):
     comp = SimpleNamespace(
         id="c1",

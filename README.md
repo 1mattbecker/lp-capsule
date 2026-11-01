@@ -48,6 +48,7 @@ base_config: ephys_BottomCamera_Pylon2Test2   # a model asset, or <asset>/<path>
 init_checkpoint: ephys_BottomCamera_Pylon2Test2   # optional: fine-tune
 overrides: {training: {max_epochs: 100, min_epochs: 100, ckpt_every_n_epochs: 25}}
 predict_videos: false
+debug_batches: 0      # N > 0: save N batches per data source, and checks on them, instead of training
 ```
 
 The `config` field takes YAML text, or a path to a YAML file (absolute, or
