@@ -25,9 +25,8 @@ import pandas as pd
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from video_metrics import CONF, THRESH_PX, classify, read_predictions  # noqa: E402
-
-from lp_relabel.frames import extract_with_context  # noqa: E402
+from lp_relabel.frames import extract_with_context
+from video_metrics import CONF, THRESH_PX, classify, read_predictions
 
 BUCKET = "https://aind-open-data.s3.amazonaws.com"
 FACE = {"nose_tip", "jaw", "spout_r", "spout_l"}
@@ -107,8 +106,8 @@ def main() -> None:
             url = video_url(session, camera[session])
             jpgs = extract_with_context(url, g.frame, Path(tmp) / session, context=2, quality=3)
             folder = Path(tmp) / session
-            pred = preds.setdefault(session, read_predictions(
-                args.predictions / session / "predictions" / f"{session}_BottomCamera.csv"))  # fmt: skip
+            csv = args.predictions / session / "predictions" / f"{session}_BottomCamera.csv"
+            pred = preds.setdefault(session, read_predictions(csv))
             for r in g.itertuples():
                 files = {f: folder / f"img{f:08d}.jpg" for f in range(r.frame - 2, r.frame + 3)}
                 assert jpgs and all(p.exists() for p in files.values())
