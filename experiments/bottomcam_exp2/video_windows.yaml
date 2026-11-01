@@ -1,0 +1,135 @@
+# Fixed video windows for exp2's label-free metrics (plan_video_windows.py;
+# table in video_windows.csv). `model` is replaced per run.
+task: predict
+model: ephys_BottomCamera_Pylon2Test2
+videos:
+- asset: behavior_813929_2025-11-12_13-42-24
+  camera: BottomCamera
+  windows:
+  - [1390620, 1400620]
+  - [1430620, 1440620]
+- asset: behavior_818586_2026-01-05_10-09-01
+  camera: BottomCamera
+  windows:
+  - [1448109, 1458109]
+  - [1488109, 1498109]
+- asset: behavior_809491_2025-10-31_09-25-40
+  camera: BottomCamera
+  windows:
+  - [1409838, 1419838]
+  - [1449838, 1459838]
+- asset: behavior_818585_2025-12-05_09-45-45
+  camera: BottomCamera
+  windows:
+  - [1435762, 1445762]
+  - [1475762, 1485762]
+- asset: behavior_818580_2025-12-09_12-38-00
+  camera: BottomCamera
+  windows:
+  - [1411355, 1421355]
+  - [1451355, 1461355]
+- asset: behavior_800886_2025-08-18_13-14-52
+  camera: BottomCamera
+  windows:
+  - [1458365, 1468365]
+  - [1498365, 1508365]
+- asset: behavior_808057_2025-10-02_13-16-47
+  camera: BottomCamera
+  windows:
+  - [1409014, 1419014]
+  - [1449014, 1459014]
+- asset: behavior_808054_2025-09-02_10-38-37
+  camera: BottomCamera
+  windows:
+  - [1421215, 1431215]
+  - [1461215, 1471215]
+- asset: behavior_816212_2025-12-11_13-24-29
+  camera: BottomCamera
+  windows:
+  - [1270974, 1280974]
+  - [1310974, 1320974]
+- asset: behavior_816214_2025-12-01_09-08-08
+  camera: BottomCamera
+  windows:
+  - [1310775, 1320775]
+  - [1350775, 1360775]
+- asset: behavior_820691_2026-02-06_08-28-25
+  camera: BottomCamera
+  windows:
+  - [1424941, 1434941]
+  - [1464941, 1474941]
+- asset: behavior_816883_2025-11-18_13-15-06
+  camera: BottomCamera
+  windows:
+  - [1560292, 1570292]
+  - [1600292, 1610292]
+- asset: behavior_815334_2025-11-17_10-00-04
+  camera: BottomCamera
+  windows:
+  - [1396820, 1406820]
+  - [1436820, 1446820]
+- asset: behavior_820688_2026-02-06_13-07-54
+  camera: BottomCamera
+  windows:
+  - [1210817, 1220817]
+  - [1250817, 1260817]
+- asset: behavior_752014_2025-03-25_12-09-16
+  camera: BottomCamera
+  windows:
+  - [606530, 616530]
+  - [912296, 922296]
+- asset: behavior_791691_2025-06-24_13-21-26
+  camera: BottomCamera
+  windows:
+  - [1167032, 1177032]
+  - [1745548, 1755548]
+- asset: behavior_717259_2024-06-28_11-17-19
+  camera: BottomCamera
+  windows:
+  - [1329931, 1339931]
+  - [1997396, 2007396]
+- asset: behavior_751769_2025-01-18_10-15-21
+  camera: BottomCamera
+  windows:
+  - [852956, 862956]
+  - [1281935, 1291935]
+- asset: behavior_758017_2025-02-06_11-26-09
+  camera: BottomCamera
+  windows:
+  - [1038015, 1048015]
+  - [1559522, 1569522]
+- asset: behavior_758018_2025-03-21_11-00-31
+  camera: BottomCamera
+  windows:
+  - [1048011, 1058011]
+  - [1574516, 1584516]
+- asset: behavior_751004_2024-12-23_14-19-57
+  camera: BottomCamera
+  windows:
+  - [1330352, 1340352]
+  - [1998029, 2008029]
+- asset: behavior_758018_2025-03-19_11-16-41
+  camera: BottomCamera
+  windows:
+  - [971512, 981512]
+  - [1459768, 1469768]
+- asset: behavior_761038_2025-04-16_10-39-06
+  camera: BottomCamera
+  windows:
+  - [1033901, 1043901]
+  - [1553352, 1563352]
+- asset: behavior_754897_2025-03-11_12-07-35
+  camera: BottomCamera
+  windows:
+  - [827206, 837206]
+  - [1243309, 1253309]
+- asset: behavior_752014_2025-03-27_12-03-19
+  camera: BottomCamera
+  windows:
+  - [840321, 850321]
+  - [1262982, 1272982]
+- asset: behavior_763590_2025-05-01_10-59-16
+  camera: BottomCamera
+  windows:
+  - [741007, 751007]
+  - [1114011, 1124011]

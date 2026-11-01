@@ -1,0 +1,27 @@
+# Step 1c of exp2: does the semi-supervised fine-tune learn? exp1_all_ft's
+# recipe (Pylon2Test2 init, lr 1e-4, unfreeze at 20) with the unsupervised
+# losses on, cut to 40 epochs: 20 past the unfreezing, where exp1_all_semi
+# collapsed. Pass: val loss tracks exp1_all_ft's logged curve, and the raw
+# PCA loss stays at a few px. g6.2xlarge (semi peaked at 15.7 GiB).
+#   uv run scripts/launch.py batch experiments/bottomcam_exp2/smoke_semi.yaml \
+#       --out runs/exp2/smoke --max-concurrent 1
+runs:
+  - name: exp2_smoke_ft_semi
+    task: train
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2
+    init_checkpoint: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      model: {losses_to_use: [pca_singleview, temporal]}
+      training:
+        max_epochs: 40
+        min_epochs: 40
+        ckpt_every_n_epochs: 40
+        lr_scheduler_params: {multisteplr: {milestones: [40]}}   # no LR step in 40 epochs
+        optimizer_params: {learning_rate: 1.0e-4}
+        rng_seed_data_pt: 0
+        rng_seed_model_pt: 0
