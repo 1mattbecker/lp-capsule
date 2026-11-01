@@ -1,5 +1,7 @@
 """Build ``p2t2_clean``: Pylon2Test2's labeled frames with their neighbours, and clean clips.
 
+Now done by ``lp-relabel clean-clips`` (lp-relabel repo); kept as the record of how exp1's asset was built.
+
 Pylon2Test2's clips were cut by stream copy: each MP4 indexes 591-743 samples
 of which 502 display (an edit list hides the rest), and some have timestamp
 gaps. aind-video-utils refuses to address frames in them (edit list not

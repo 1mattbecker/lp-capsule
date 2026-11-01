@@ -1,5 +1,7 @@
 """Build the labels asset for the bottom-camera training experiment.
 
+The FIP clip cutting (``cut_fip_clips``) is now ``lp-relabel cut-clips`` (lp-relabel repo).
+
 Writes ``<out>/bottomcam_exp1/`` (upload that folder as the data asset):
 
 - ``train/``: ``train_all.csv``, ``train_ephys.csv``, ``train_fip.csv`` (image
