@@ -161,3 +161,6 @@ runs/
 # Local planning notes (Mac paths, asset ids); not published
 LP_CAPSULE_PLAN.md
 LP_CAPSULE_HANDOFF.md
+
+# Session prompts (local paths, asset ids); not published
+prompts/
