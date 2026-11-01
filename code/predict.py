@@ -76,8 +76,9 @@ def rename_head_keys(state: dict[str, Any]) -> dict[str, Any]:
 
 def load_model(
     bundle: Bundle, batch_size: int, precision: str, work: Path, videos: bool = True
-) -> tuple[Any, int]:
-    """Return an LP ``Model`` holding the bundle's weights, and its batch size.
+) -> tuple[Any, int, int]:
+    """Return an LP ``Model`` holding the bundle's weights, its batch size, and its
+    context: the frames it reads on each side of a predicted frame.
 
     The keypoint names are written into the config in memory: LP's prediction
     handler refuses a config without ``data.keypoint_names``. Without ``videos``
@@ -90,9 +91,7 @@ def load_model(
 
     config = ModelConfig.from_yaml_file(bundle.config)
     cfg = config.cfg
-    if cfg.model.model_type != "heatmap" and videos:
-        # Context models read neighbouring frames, which a clip's first and last
-        # frames lack; not supported until a model needs it.
+    if cfg.model.model_type not in CONTEXT and videos:
         raise NotImplementedError(f"model type {cfg.model.model_type} is unsupported")
     with open_dict(cfg):
         cfg.data.keypoint_names = list(bundle.keypoint_names)
@@ -102,7 +101,18 @@ def load_model(
     # weights are set here, so LP never looks for a checkpoint in it.
     model = Model(work / "model", config, precision=precision)
     model.model = load_module(cfg, bundle.checkpoint)
-    return model, int(cfg.dali.base.predict.sequence_length)
+    return model, int(cfg.dali.base.predict.sequence_length), CONTEXT[cfg.model.model_type]
+
+
+# Frames a model type reads on each side of the frame it predicts (LP's context
+# models use t-2..t+2).
+CONTEXT = {"heatmap": 0, "heatmap_mhcrnn": 2}
+
+
+def padded(start: int, end: int, n_frames: int, context: int) -> tuple[int, int]:
+    """The clip to cut for window ``[start, end)``: ``context`` frames more on each
+    side, within the video, so every window frame has its real neighbours."""
+    return max(0, start - context), min(n_frames, end + context)
 
 
 def predict_file(model: Any, mp4: Path, reader: str, out_dir: Path) -> pd.DataFrame:
@@ -235,8 +245,12 @@ def predict_video(
     reader: str,
     work: Path,
     diagnostics: Path | None = None,
+    context: int = 0,
 ) -> VideoResult:
     """Predict a video's windows, or the whole video, keyed by source frame.
+
+    A context model's windows are cut ``context`` frames wider on each side and
+    the extra rows dropped, so no window frame is predicted from padding.
 
     With ``diagnostics``, :func:`diagnose` the first window's clip and write the
     result there, with LP's own prediction of that clip's frame 0.
@@ -269,13 +283,19 @@ def predict_video(
     parts = []
     for start, end in spec.windows:
         t0 = time.time()
-        clip = cut_clip(mp4, start, end - start, work / f"clip_{start:08d}.mp4", index=index)
+        if end > index.n_samples:  # padding would otherwise hide it
+            raise ValueError(f"window [{start}, {end}) past the end ({index.n_samples} frames)")
+        cut_start, cut_end = padded(start, end, int(index.n_samples), context)
+        clip = cut_clip(
+            mp4, cut_start, cut_end - cut_start, work / f"clip_{start:08d}.mp4", index=index
+        )
         t1 = time.time()
         try:
             found = diagnose(model, clip, reader) if diagnostics and not parts else None
-            parts.append(
-                reindex(predict_file(model, clip, reader, work / "preds"), start, end - start)
+            predicted = reindex(
+                predict_file(model, clip, reader, work / "preds"), cut_start, cut_end - cut_start
             )
+            parts.append(predicted.loc[start : end - 1])
             if found is not None:
                 found["lp_prediction_row0"] = parts[0].iloc[0].tolist()
                 found["head_weight_abs_sum_after"] = float(
@@ -379,17 +399,17 @@ def run_predict(
         reader=config.reader,
         precision=config.precision,
     )
-    model, batch_frames = load_model(
+    model, batch_frames, context = load_model(
         bundle, config.batch_size, config.precision, work, videos=bool(config.videos)
     )
-    record.update(batch_size=batch_frames)
+    record.update(batch_size=batch_frames, context_frames=context)
     out_dir = results_dir / "predictions"
     out_dir.mkdir(parents=True, exist_ok=True)
     videos = []
     for spec in config.videos:
         mp4 = video_path(data_dir / spec.asset, spec)
         debug = results_dir / "diagnostics.json" if config.debug and not videos else None
-        result = predict_video(model, mp4, spec, config.reader, work, debug)
+        result = predict_video(model, mp4, spec, config.reader, work, debug, context)
         csv = out_dir / f"{spec.label}.csv"
         result.predictions.to_csv(csv)
         videos.append(

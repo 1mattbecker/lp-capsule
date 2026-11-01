@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from aind_video_utils import read_mp4_frame_index
-from predict import predict_video, reindex, rename_head_keys
+from predict import padded, predict_video, reindex, rename_head_keys
 from run_config import VideoSpec
 
 
@@ -66,6 +66,21 @@ def test_windows_keyed_by_source_frame(mp4, tmp_path):
     assert np.abs(got - source).max() < 1.0
     assert [w["start"] for w in result.info["windows"]] == [5, 40]
     assert not list(tmp_path.glob("clip_*.mp4")), "clips are deleted"
+
+
+def test_context_windows_cut_wider(mp4, tmp_path):
+    n = read_mp4_frame_index(mp4).n_samples
+    assert padded(5, 12, n, 2) == (3, 14)
+    assert padded(0, 4, n, 2) == (0, 6)
+    assert padded(n - 3, n, n, 2) == (n - 5, n)
+    spec = VideoSpec(asset="s", camera="C", windows=((1, 8), (40, 47)))
+    model = FakeModel()
+    result = predict_video(model, mp4, spec, "dali", tmp_path, context=2)
+    frames = list(range(1, 8)) + list(range(40, 47))
+    assert list(result.predictions.index) == frames
+    source = gray_means(mp4)[frames]
+    got = result.predictions[("scorer", "kp", "x")].to_numpy()
+    assert np.abs(got - source).max() < 1.0
 
 
 def test_whole_video_uniform_is_not_restamped(mp4, tmp_path):
