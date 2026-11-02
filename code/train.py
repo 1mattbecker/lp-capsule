@@ -11,7 +11,9 @@ Fine-tuning sets LP's ``model.checkpoint``, which LP loads with
 ``strict=False``: an LP 1.6 checkpoint's head (``upsampling_layers.*``) would be
 skipped without a word. So the init checkpoint is first loaded strictly in its
 own architecture, its head renamed, checked against the new config, and saved
-as a temporary checkpoint whose every key LP's model has.
+as a temporary checkpoint whose every key LP's model has. A heatmap init for a
+heatmap_mhcrnn run fills the context model's single-frame head (``head.head_sf``)
+and leaves the multi-frame head (``head.head_mf``) to LP's fresh initialisation.
 """
 
 from __future__ import annotations
@@ -44,6 +46,17 @@ ARCHITECTURE = (
     "data.downsample_factor",
 )
 PIXEL_ERRORS = "predictions_pixel_error.csv"
+# (init model_type, training model_type) pairs an init checkpoint may bridge.
+BRIDGES = {("heatmap", "heatmap_mhcrnn")}
+
+
+def bridge_state(state: dict[str, Any], init_type: str, model_type: str) -> dict[str, Any]:
+    """Rename an init state dict's keys for the training architecture (see the module docstring)."""
+    if init_type == model_type:
+        return state
+    if (init_type, model_type) not in BRIDGES:
+        raise ValueError(f"no init bridge from {init_type} to {model_type}")
+    return {f"head.head_sf.{k[5:]}" if k.startswith("head.") else k: v for k, v in state.items()}
 
 
 def base_config_path(config: TrainConfig, data_dir: Path) -> tuple[Path, list[str] | None]:
@@ -82,7 +95,10 @@ def init_checkpoint(cfg: Any, asset: Path, names: list[str], work: Path) -> dict
     init_cfg = OmegaConf.load(init.config)
     with open_dict(init_cfg):
         init_cfg.data.keypoint_names = names
-    differ = [k for k in ARCHITECTURE if _select(init_cfg, k) != _select(cfg, k)]
+    init_type, model_type = init_cfg.model.model_type, cfg.model.model_type
+    bridged = init_type != model_type and (init_type, model_type) in BRIDGES
+    shared = [k for k in ARCHITECTURE if not (bridged and k == "model.model_type")]
+    differ = [k for k in shared if _select(init_cfg, k) != _select(cfg, k)]
     if differ:
         raise ValueError(
             "init_checkpoint's architecture differs from the training config at "
@@ -91,10 +107,12 @@ def init_checkpoint(cfg: Any, asset: Path, names: list[str], work: Path) -> dict
     # Strict, so every renamed key is one this architecture has.
     module = load_module(init_cfg, init.checkpoint)
     path = work / "init.ckpt"
-    torch.save({"state_dict": module.state_dict()}, path)
+    state = bridge_state(module.state_dict(), init_type, model_type)
+    torch.save({"state_dict": state}, path)
     del module
     return {
         "asset": asset.name,
+        "model_type": init_type,
         "checkpoint": str(init.checkpoint.relative_to(asset)),
         "checkpoint_sha256": file_sha256(init.checkpoint),
         "path": str(path),

@@ -8,7 +8,7 @@ import shutil
 import pytest
 from conftest import FIXTURES, PYLON2_NAMES, write
 from run_config import TrainConfig
-from train import GpuMemory, build_cfg, pixel_error_summary
+from train import GpuMemory, bridge_state, build_cfg, pixel_error_summary
 
 
 @pytest.fixture
@@ -124,3 +124,13 @@ def test_gpu_memory_peak(monkeypatch):
     summary = gpu.summary()
     assert summary["name"] == "NVIDIA A10G" and summary["peak_used_gib"] == round(9000 / 1024, 2)
     assert summary["total_gib"] == round(23028 / 1024, 2)
+
+
+def test_bridge_state_heatmap_to_mhcrnn():
+    state = {"backbone.conv1.weight": 1, "head.upsampling_layers.0.weight": 2}
+    assert bridge_state(state, "heatmap", "heatmap") is state
+    assert bridge_state(state, "heatmap", "heatmap_mhcrnn") == {
+        "backbone.conv1.weight": 1, "head.head_sf.upsampling_layers.0.weight": 2,
+    }  # fmt: skip
+    with pytest.raises(ValueError, match="no init bridge"):
+        bridge_state(state, "heatmap_mhcrnn", "heatmap")

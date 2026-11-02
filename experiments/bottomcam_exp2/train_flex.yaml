@@ -1,0 +1,27 @@
+# exp2 step 3: the fine-tune noise floor. exp1_all_ft's recipe (fine-tune
+# Pylon2Test2 on all frames, 100 epochs, lr 1e-4) with other seeds. Flex.
+# Pylon2Test2's frames come from p2t2_clean, as in train_l4.yaml; its labeled
+# frames are the same as the model asset's.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp2/train_flex.yaml \
+#       --out runs/exp2/train --max-concurrent 12
+defaults:
+  train:
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2
+    init_checkpoint: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      model: {losses_to_use: []}
+      training:
+        max_epochs: 100
+        min_epochs: 100
+        ckpt_every_n_epochs: 25
+        lr_scheduler_params: {multisteplr: {milestones: [50, 67, 83]}}
+        optimizer_params: {learning_rate: 1.0e-4}
+        rng_seed_data_pt: 1
+        rng_seed_model_pt: 1
+runs:
+  - name: exp2_ft_seed1
