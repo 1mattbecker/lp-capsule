@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from aind_video_utils import read_mp4_frame_index
-from predict import padded, predict_video, reindex, rename_head_keys
+from predict import map_labels, padded, predict_video, reindex, rename_head_keys
 from run_config import VideoSpec
 
 
@@ -101,3 +101,19 @@ def test_rename_head_keys():
     state = {"upsampling_layers.0.weight": 1, "backbone.conv.weight": 2}
     renamed = rename_head_keys(state)
     assert renamed == {"head.upsampling_layers.0.weight": 1, "backbone.conv.weight": 2}
+
+
+def test_map_labels_to_model_keypoints():
+    cols = pd.MultiIndex.from_product(
+        [["scorer"], ["nose_tip", "jaw", "paw"], ["x", "y"]],
+        names=["scorer", "bodyparts", "coords"],
+    )
+    labels = pd.DataFrame([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], index=["img.png"], columns=cols)
+    mapped = map_labels(
+        labels, {"nose": "nose_tip", "jaw_tip": "jaw"}, ["jaw_tip", "jaw_left", "nose"]
+    )
+    assert list(mapped.columns.get_level_values(1)[::2]) == ["jaw_tip", "jaw_left", "nose"]
+    assert mapped.iloc[0].tolist()[:2] == [3.0, 4.0] and mapped.iloc[0].tolist()[4:] == [1.0, 2.0]
+    assert mapped[("scorer", "jaw_left", "x")].isna().all()
+    with pytest.raises(ValueError, match="not in the labels"):
+        map_labels(labels, {"nose": "tail"}, ["nose"])

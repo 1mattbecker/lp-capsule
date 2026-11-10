@@ -315,6 +315,34 @@ def predict_video(
     return VideoResult(pd.concat(parts), info)
 
 
+def map_labels(
+    labels: pd.DataFrame, keypoint_map: dict[str, str], names: list[str]
+) -> pd.DataFrame:
+    """Rewrite an LP labels table in the model's keypoints ``names``.
+
+    ``keypoint_map`` is model keypoint -> labels keypoint; model keypoints not in
+    it get NaN, which LP's pixel error treats as unlabeled.
+    """
+    have = set(labels.columns.get_level_values(1))
+    unknown = sorted(set(keypoint_map) - set(names))
+    missing = sorted(set(keypoint_map.values()) - have)
+    if unknown or missing:
+        raise ValueError(
+            f"keypoint_map: not model keypoints {unknown}; not in the labels {missing}"
+        )
+    scorer = labels.columns.get_level_values(0)[0]
+    out = {}
+    for name in names:
+        for coord in ("x", "y"):
+            source = keypoint_map.get(name)
+            out[(scorer, name, coord)] = (
+                labels[(scorer, source, coord)] if source else pd.Series(float("nan"), labels.index)
+            )
+    mapped = pd.DataFrame(out, index=labels.index)
+    mapped.columns.names = labels.columns.names
+    return mapped
+
+
 def check_labeled_frames(
     model: Any,
     bundle: Bundle,
@@ -322,6 +350,7 @@ def check_labeled_frames(
     data_dir: Path,
     out_dir: Path,
     prefix: str = "",
+    keypoint_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Predict labeled frames; write pixel errors to ``out_dir``, names prefixed.
 
@@ -330,7 +359,9 @@ def check_labeled_frames(
     train/val/test split from the config's seeds. As ``<asset>/<labels.csv>``
     they are that CSV, its image paths relative to its folder, in one set "all".
     The semi-supervised losses are switched off for this, so LP builds a
-    labeled-only data module; the network is unchanged.
+    labeled-only data module; the network is unchanged. With ``keypoint_map``
+    the CSV is first rewritten in the model's keypoints (:func:`map_labels`),
+    beside the results; its images are still read from the CSV's folder.
     """
     import shutil
 
@@ -343,6 +374,12 @@ def check_labeled_frames(
         images = labels.parent
         if not labels.is_file():
             raise FileNotFoundError(f"no labels CSV {labels}")
+        if keypoint_map:
+            table = pd.read_csv(labels, header=[0, 1, 2], index_col=0)
+            mapped_dir = out_dir.parent / "mapped_labels"
+            mapped_dir.mkdir(parents=True, exist_ok=True)
+            labels = mapped_dir / labels.name
+            map_labels(table, keypoint_map, list(bundle.keypoint_names)).to_csv(labels)
     else:
         images = bundle.root
         labels = bundle.root / Path(str(cfg.data.get("csv_file") or "CollectedData.csv")).name
@@ -373,7 +410,10 @@ def check_labeled_frames(
     if summary is not None:
         summary.to_csv(out_dir / f"{prefix}pixel_error_summary.csv", index=False)
     return {
-        "labels": str(labels.relative_to(data_dir)),
+        "labels": labels_spec
+        if isinstance(labels_spec, str)
+        else str(labels.relative_to(data_dir)),
+        **({"keypoint_map": dict(keypoint_map)} if keypoint_map else {}),
         "n_frames": len(result.predictions),
         "pixel_error_px_original_frame": (
             summary.to_dict(orient="records") if summary is not None else None
@@ -427,9 +467,20 @@ def run_predict(
         checks = []
         for labels in config.labeled_frames:
             prefix = f"{Path(labels).stem}."
-            checks.append(check_labeled_frames(model, bundle, labels, data_dir, out, prefix))
+            checks.append(
+                check_labeled_frames(
+                    model, bundle, labels, data_dir, out, prefix, config.keypoint_map
+                )
+            )
             record.update(labeled_frames=checks)
     elif config.labeled_frames:
         record.update(
-            labeled_frames=check_labeled_frames(model, bundle, config.labeled_frames, data_dir, out)
+            labeled_frames=check_labeled_frames(
+                model,
+                bundle,
+                config.labeled_frames,
+                data_dir,
+                out,
+                keypoint_map=config.keypoint_map,
+            )
         )

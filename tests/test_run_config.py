@@ -159,3 +159,15 @@ def test_labeled_frames_list_and_checkpoint():
                 {"labeled_frames": ["a/x.csv", 3]}):  # fmt: skip
         with pytest.raises(ValueError):
             parse_config({"task": "predict", "model": "m", "labeled_frames": True, **bad})
+
+
+def test_keypoint_map():
+    raw = {"task": "predict", "model": "m", "labeled_frames": ["a/test_x.csv"],
+           "keypoint_map": {"jaw_tip": "jaw", "nose_tip": "nose_tip"}}  # fmt: skip
+    config = parse_config(raw)
+    assert config.keypoint_map == {"jaw_tip": "jaw", "nose_tip": "nose_tip"}
+    assert parse_config(load_config_text(dump(config))) == config
+    with pytest.raises(ValueError, match="needs labeled_frames"):
+        parse_config({**raw, "labeled_frames": True})
+    with pytest.raises(ValueError, match="more than once"):
+        parse_config({**raw, "keypoint_map": {"a": "jaw", "b": "jaw"}})

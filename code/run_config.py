@@ -20,6 +20,8 @@ Predict::
         windows: [[120000, 120500]]   # [start, end) source frames; omit = whole video
     labeled_frames: false # true: also score the model on its own labeled frames;
                           # or <asset>/<labels.csv> (or a list) to score it on those
+    keypoint_map:         # optional, with <asset>/<labels.csv>: model keypoint ->
+      nose_tip: nose_tip  # labels keypoint, for labels of another keypoint set
 
 Train::
 
@@ -83,6 +85,10 @@ class PredictConfig:
     # "<asset>/<labels.csv>" for other labels, or several of those, each scored
     # on its own (see predict.check_labeled_frames).
     labeled_frames: bool | str | tuple[str, ...] = False
+    # Model keypoint -> labels keypoint, when the labels CSVs name other keypoints
+    # than the model: they are rewritten in the model's keypoints first, and model
+    # keypoints not in the map count as unlabeled (see predict.map_labels).
+    keypoint_map: dict[str, str] = field(default_factory=dict)
     # "auto" (bundle.find_checkpoint), "best", "last", or a .ckpt file name.
     checkpoint: str = "auto"
     task: str = "predict"
@@ -230,6 +236,23 @@ def parse_labeled_frames(raw: Any) -> bool | str | tuple[str, ...]:
     return _flag(raw, "labeled_frames")
 
 
+def parse_keypoint_map(raw: Any, labeled_frames: bool | str | tuple[str, ...]) -> dict[str, str]:
+    """Parse ``keypoint_map``: model keypoint -> labels keypoint, for labels CSVs only."""
+    if not raw:
+        return {}
+    if not isinstance(raw, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in raw.items()
+    ):
+        raise ValueError(f"keypoint_map must map model keypoints to label keypoints, got {raw!r}")
+    if not labeled_frames or labeled_frames is True:
+        raise ValueError("keypoint_map needs labeled_frames as <asset>/<labels.csv> (or a list)")
+    targets = list(raw.values())
+    repeated = sorted({v for v in targets if targets.count(v) > 1})
+    if repeated:
+        raise ValueError(f"keypoint_map: label keypoints mapped more than once: {repeated}")
+    return dict(raw)
+
+
 def _checkpoint(value: Any) -> str:
     if value in CHECKPOINTS or (
         isinstance(value, str) and value.endswith(".ckpt") and "/" not in value
@@ -254,10 +277,12 @@ def parse_predict(raw: dict[str, Any]) -> PredictConfig:
             "checkpoint",
             "debug",
             "labeled_frames",
+            "keypoint_map",
         },
         "predict",
     )
     labeled_frames = parse_labeled_frames(raw.get("labeled_frames", False))
+    keypoint_map = parse_keypoint_map(raw.get("keypoint_map", {}), labeled_frames)
     videos = raw.get("videos", [] if labeled_frames else None)
     if not isinstance(videos, list) or not (videos or labeled_frames):
         raise ValueError("predict: videos must be a non-empty list (or set labeled_frames)")
@@ -277,6 +302,7 @@ def parse_predict(raw: dict[str, Any]) -> PredictConfig:
         batch_size=batch_size,
         debug=_flag(raw.get("debug", False), "debug"),
         labeled_frames=labeled_frames,
+        keypoint_map=keypoint_map,
         checkpoint=_checkpoint(raw.get("checkpoint", "auto")),
     )
 
@@ -380,6 +406,7 @@ def to_dict(config: RunConfig) -> dict[str, Any]:
                 if config.labeled_frames
                 else {}
             ),
+            **({"keypoint_map": dict(config.keypoint_map)} if config.keypoint_map else {}),
             "videos": [
                 {
                     "asset": v.asset,

@@ -1,0 +1,24 @@
+# Score the tube-rig bottom-view model (asset ctlut_tongue_model; 9 keypoints:
+# tube_left/right, nose_tip, jaw_tip/left/right, tongue_tip/left/right) on the
+# four test sets, through a keypoint map onto our labels. Its jaw_left/right
+# have no counterpart and the paws are not in it. The map's left/right pairing
+# is a guess: the predictions CSVs are rescored offline with either pairing.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp2/eval_ctlut.yaml \
+#       --out runs/exp2/eval_ctlut --max-concurrent 60
+defaults:
+  predict:
+    labeled_frames:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_ood.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_ood.csv
+    keypoint_map:
+      nose_tip: nose_tip
+      jaw_tip: jaw
+      tube_left: spout_l
+      tube_right: spout_r
+      tongue_tip: tongue_tip_center
+      tongue_left: tongue_tip_left
+      tongue_right: tongue_tip_right
+runs:
+  - {name: eval_ctlut_tongue, model: ctlut_tongue_model}
