@@ -1,0 +1,16 @@
+# Score the exp3 models on the four test sets, at LP's best and the last
+# checkpoint. Baselines: exp1_all_ft (exp1 eval) and exp2_ft_seed1 (exp2 eval).
+#   uv run scripts/launch.py batch experiments/bottomcam_exp3/eval.yaml \
+#       --out runs/exp3/eval --max-concurrent 12
+defaults:
+  predict:
+    labeled_frames:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_ood.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_ood.csv
+runs:
+  - {name: eval_exp3_ft_768x512_last, model: exp3_ft_768x512, checkpoint: last}
+  - {name: eval_exp3_ft_768x512_best, model: exp3_ft_768x512, checkpoint: best}
+  - {name: eval_exp3_ft_768x512_seed1_last, model: exp3_ft_768x512_seed1, checkpoint: last}
+  - {name: eval_exp3_ft_768x512_seed1_best, model: exp3_ft_768x512_seed1, checkpoint: best}

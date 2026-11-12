@@ -1,0 +1,27 @@
+# exp3 smoke: does LP train at about the full frame size (720x540 frames ->
+# 768x512 input, vs 384x384), and what does it peak at on the GPU? 5 epochs of
+# the exp1_all_ft recipe. LP 2.4.3 needs the height to be a multiple of 128
+# (it checks the height only); 768 wide keeps the width one too. g6.2xlarge.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp3/smoke.yaml \
+#       --out runs/exp3/smoke --max-concurrent 1
+runs:
+  - name: exp3_smoke_ft_768x512
+    task: train
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2
+    init_checkpoint: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      data: {image_resize_dims: {height: 512, width: 768}}
+      model: {losses_to_use: []}
+      training:
+        max_epochs: 5
+        min_epochs: 5
+        ckpt_every_n_epochs: 5
+        lr_scheduler_params: {multisteplr: {milestones: [5]}}
+        optimizer_params: {learning_rate: 1.0e-4}
+        rng_seed_data_pt: 0
+        rng_seed_model_pt: 0

@@ -1,0 +1,31 @@
+# exp3: input resolution. exp1_all_ft's recipe (fine-tune Pylon2Test2 on all
+# frames, 100 epochs, lr 1e-4) at 768x512, about the 720x540 frame (x 1.07,
+# y 0.95), instead of 384x384 (x 0.53, y 0.71). Two seeds, to set against
+# the two 384x384 seeds (exp1_all_ft = seed 0, exp2_ft_seed1 = seed 1).
+# Pylon2Test2 was trained at 384x384, so this also tests whether its weights
+# carry over to features twice the size. g6.2xlarge (L4), size from smoke.yaml.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp3/train.yaml \
+#       --out runs/exp3/train --max-concurrent 2
+defaults:
+  train:
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2
+    init_checkpoint: ephys_BottomCamera_Pylon2Test2
+    csv_file: train_all.csv
+    overrides:
+      data: {image_resize_dims: {height: 512, width: 768}}
+      model: {losses_to_use: []}
+      training:
+        max_epochs: 100
+        min_epochs: 100
+        ckpt_every_n_epochs: 25
+        lr_scheduler_params: {multisteplr: {milestones: [50, 67, 83]}}
+        optimizer_params: {learning_rate: 1.0e-4}
+runs:
+  - name: exp3_ft_768x512
+    overrides: {training: {rng_seed_data_pt: 0, rng_seed_model_pt: 0}}
+  - name: exp3_ft_768x512_seed1
+    overrides: {training: {rng_seed_data_pt: 1, rng_seed_model_pt: 1}}
