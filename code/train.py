@@ -37,12 +37,12 @@ from bundle import (
 from run_config import TrainConfig
 
 # Config entries an init checkpoint's architecture must share with the new one.
+# The input size (data.image_resize_dims) is not one: the backbone and heatmap
+# head are convolutional, so their weights fit any input size.
 ARCHITECTURE = (
     "model.model_type",
     "model.backbone",
     "data.num_keypoints",
-    "data.image_resize_dims.height",
-    "data.image_resize_dims.width",
     "data.downsample_factor",
 )
 PIXEL_ERRORS = "predictions_pixel_error.csv"
