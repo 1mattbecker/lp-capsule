@@ -1,0 +1,33 @@
+# exp4: do larger pretrained backbones beat ResNet-50 (AP-10K)? Each trains
+# from its pretrained weights with exp1_all's from-scratch recipe (300 epochs,
+# lr 1e-3, milestones 150/200/250, backbone frozen for 20 epochs). References:
+# exp1_all / exp1_all_seed1 (ResNet-50 from scratch) and exp1_all_ft /
+# exp2_ft_seed1 (fine-tuned Pylon2Test2, the current best). Smoke peaks
+# 8-12 GiB; g6e.xlarge (L40S) for speed.
+#   uv run scripts/launch.py batch experiments/bottomcam_exp4/train.yaml \
+#       --out runs/exp4/train --max-concurrent 4
+defaults:
+  train:
+    project:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/train
+      - pylon2test2_r01_labels/pylon2test2_r01_labels
+      - p2t2_clean/p2t2_clean
+    base_config: ephys_BottomCamera_Pylon2Test2   # heatmap, 384x384
+    csv_file: train_all.csv
+    overrides:
+      model: {losses_to_use: []}
+      training:
+        max_epochs: 300
+        min_epochs: 300
+        ckpt_every_n_epochs: 50   # keeps epoch=299 (last) besides LP's best
+        rng_seed_data_pt: 0
+        rng_seed_model_pt: 0
+runs:
+  - name: exp4_vitb_dinov2
+    overrides: {model: {backbone: vitb_dinov2}}
+  - name: exp4_vitb_sam
+    overrides: {model: {backbone: vitb_sam}}
+  - name: exp4_vitb_sam2
+    overrides: {model: {backbone: vitb_sam2}}
+  - name: exp4_resnet101
+    overrides: {model: {backbone: resnet101}}

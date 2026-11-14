@@ -1,0 +1,20 @@
+# Score the exp4 models on the four test sets, at LP's best and the last
+# checkpoint. Baselines: exp1 eval (exp1_all, exp1_all_ft) and exp2 eval (exp2_ft_seed1).
+#   uv run scripts/launch.py batch experiments/bottomcam_exp4/eval.yaml \
+#       --out runs/exp4/eval --max-concurrent 12
+defaults:
+  predict:
+    labeled_frames:
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_ephys_ood.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_id.csv
+      - labeleddata_bottomcam_exp1/bottomcam_exp1/upload/bottomcam_exp1/test/test_fip_ood.csv
+runs:
+  - {name: eval_exp4_vitb_dinov2_last, model: exp4_vitb_dinov2, checkpoint: last}
+  - {name: eval_exp4_vitb_dinov2_best, model: exp4_vitb_dinov2, checkpoint: best}
+  - {name: eval_exp4_vitb_sam_last, model: exp4_vitb_sam, checkpoint: last}
+  - {name: eval_exp4_vitb_sam_best, model: exp4_vitb_sam, checkpoint: best}
+  - {name: eval_exp4_vitb_sam2_last, model: exp4_vitb_sam2, checkpoint: last}
+  - {name: eval_exp4_vitb_sam2_best, model: exp4_vitb_sam2, checkpoint: best}
+  - {name: eval_exp4_resnet101_last, model: exp4_resnet101, checkpoint: last}
+  - {name: eval_exp4_resnet101_best, model: exp4_resnet101, checkpoint: best}
