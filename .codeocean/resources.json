@@ -1,5 +1,5 @@
 {
 	"version": 1,
 	"resource_class": "dedicated",
-	"machine_config": {"instance_type": "g6e.xlarge"}
+	"machine_config": {"instance_type": "g6.2xlarge"}
 }
